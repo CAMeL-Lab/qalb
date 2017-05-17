@@ -1,0 +1,10 @@
+# AI
+data/
+output/
+
+# Python
+*.pyc
+
+# macOS
+.DS_Store
+Icon?
