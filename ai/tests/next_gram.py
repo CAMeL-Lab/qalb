@@ -5,8 +5,8 @@ from collections import deque
 
 import tensorflow as tf
 
-from data_parsing import TextFile
-from models import NextGram
+from ai.datasets import TextFile
+from ai.models import NextGram
 
 
 # HYPERPARAMETERS
@@ -38,7 +38,7 @@ dataset = TextFile('bible.txt', batch_size=BATCH_SIZE, gram_order=GRAM_ORDER,
 graph = tf.Graph()
 with graph.as_default():
   m = NextGram(alphabet_size=dataset.size(), restore=should_restore,
-    model_name=model_name,  lr=LR, lr_decay=LR_DECAY, batch_size=BATCH_SIZE,
+    model_name=model_name, lr=LR, lr_decay=LR_DECAY, batch_size=BATCH_SIZE,
     num_steps=NUM_STEPS, embed_size=EMBED_SIZE, num_rnn_layers=NUM_RNN_LAYERS,
     max_grad_norm=MAX_GRAD_NORM, rnn_cell=RNN_CELL)
 
@@ -61,7 +61,7 @@ def train():
         valid_fd = {m.inputs: valid_inputs, m.labels: valid_labels}
         # OPTIONAL: stop after the specified number of steps
         step = m.global_step.eval()
-        if step > 3000:
+        if step > 5000:
           exit()
         # Training step
         sess.run(m.train_op, feed_dict=train_fd)
@@ -114,7 +114,7 @@ def generate():
           gram = seed[i]
         else:
           gram = predictions[-1]
-        _input = sess.run(tf.)
+        #_input = sess.run(tf.)
         output, state = sess.run(m.gen_output,
           feed_dict={m.seed: gram, m.gen_state: state})
         predictions.append(output[0])
@@ -122,5 +122,5 @@ def generate():
 
 
 if __name__ == '__main__':
-  #train()
-  generate()
+  train()
+  #generate()

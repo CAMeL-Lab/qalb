@@ -1,8 +1,6 @@
 from six.moves import xrange
 
-import json
 import random
-import re
 
 
 class Dataset(object):
@@ -81,67 +79,3 @@ class Dataset(object):
   
   def size(self):
     return len(self.ix_to_char)
-
-
-class TrumpTweets(Dataset):
-  """Reader for JSON Trump tweets."""
-  
-  def __init__(self, **kw):
-    super(TrumpTweets, self).__init__(**kw)
-    tweets = []
-    max_chars = self.num_steps + self.gram_order - 1
-    for i in xrange(2009, 2018):
-      with open('data/trump_tweets/condensed_{}.json'.format(i)) as f:
-        file_data = json.load(f)
-      for tweet_data in file_data:
-        tweet = self.tokenize(tweet_data['text'][:max_chars], add_eos=True)
-        # Optimization: instead of concatenating the _PAD token for the shifted
-        # tweet, append it and exclude it later (hence the <= rather than <).
-        while len(tweet) <= self.num_steps:
-          tweet.append(self.char_to_ix['_PAD'])
-        tweets.append(tweet)
-    
-    self.make_triples(tweets)
-
-
-class WhatsAppChats(Dataset):
-  """Reader for WhastApp exported chat history text files."""
-  
-  def __init__(self, filename='rafi.txt', **kw):
-    super(WhatsAppChats, self).__init__(**kw)
-    with open('data/whatsapp/' + filename) as f:
-      raw_lines = f.readlines()
-    
-    max_chars = self.num_steps + self.gram_order - 1
-    very_ugly_re = r'[0-9]{1,2}/[0-9]{1,2}/[0-9]{1,2}, [0-9]{1,2}:[0-9]{1,2}:[0-9]{1,2} [AP]M: (?:[^:]+): ([^\r]{1,%s})' % max_chars
-    
-    # Tokenize and chop lines to `num_steps` limit.
-    lines = []
-    for raw_line in raw_lines:
-      match = re.match(very_ugly_re, raw_line)
-      if match:
-        line = self.tokenize(match.group(1), add_eos=True)
-        while len(line) <= self.num_steps:
-          line.append(self.char_to_ix['_PAD'])
-        lines.append(line)
-    
-    del raw_lines  # just for memory efficiency
-    self.make_triples(lines)
-
-
-class TextFile(Dataset):
-  """Reader for generic text files. Less suitable for seq2seq tasks."""
-  
-  def __init__(self, filename, **kw):
-    super(TextFile, self).__init__(**kw)
-    with open('data/' + filename) as f:
-      raw_data = f.read()
-    data = []
-    # Remove the last entry that might have length < `num_steps`.
-    max_chars = self.num_steps + self.gram_order - 1
-    for i in xrange(0, len(raw_data) - 1, self.num_steps):
-      data.append(self.tokenize(raw_data[i:i+max_chars],
-        add_eos=True))
-    
-    del raw_data
-    self.make_triples(data)

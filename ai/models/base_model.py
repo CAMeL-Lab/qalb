@@ -5,7 +5,7 @@ import os
 import tensorflow as tf
 
 
-class Model(object):
+class BaseModel(object):
   """Model abstraction to handle restoring variables and summary writers."""
   
   def __init__(self, restore=False, model_name='default', verbose=True):
@@ -17,7 +17,6 @@ class Model(object):
     if verbose: print("Building computational graph...")
     self.build_graph()
     self.summary_op = tf.summary.merge_all()
-    
     # Default configurations
     self.restore = restore
     self.model_name = model_name
@@ -58,15 +57,11 @@ class Model(object):
     self.train_writer = tf.summary.FileWriter(train_dir, graph=sess.graph)
     self.valid_writer = tf.summary.FileWriter(valid_dir, graph=sess.graph)
   
-  def save(self):
+  def save(self, filename='checkpoint.ckpt'):
     """Save the model's variables for later training or evaluation. Requires
        the model's graph to be fully built."""
-    try:
-      sess = tf.get_default_session()
-      self.saver.save(sess, os.path.join('output', self.model_name,
-        'checkpoint.ckpt'), global_step=self.global_step.eval())
-    except AttributeError:
-      raise AttributeError("Model graph not fully built.")
+    sess = tf.get_default_session()
+    self.saver.save(sess, os.path.join('output', self.model_name, filename), global_step=self.global_step.eval())
   
   def export(self):
     """Save all the variables of the model for non-python replications."""
@@ -74,4 +69,3 @@ class Model(object):
     for v in tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES):
       result[v.name[:-2]] = v.eval().tolist()
     return result
-

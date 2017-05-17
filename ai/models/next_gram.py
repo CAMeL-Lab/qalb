@@ -30,12 +30,6 @@ class NextGram(Model):
       shape=[self.batch_size, self.num_steps])
     self.labels = tf.placeholder(tf.int32, name='labels',
       shape=[self.batch_size, self.num_steps])
-    # Generative placeholders
-    self.tokens = tf.placeholder(tf.int32, name='seed', shape=[-1])
-    self.gen_seed = tf.placeholder(tf.float32, name='gen_seed',
-      shape=[self.embed_size])
-    self.gen_state = tf.placeholder(tf.float32, name='gen_state',
-      shape=[self.num_rnn_layers, 2, self.batch_size, self.embed_size])
     
     # Variables that the model can modify during training
     self._lr = tf.Variable(self.lr, trainable=False, name='lr')
@@ -43,12 +37,12 @@ class NextGram(Model):
     
     # Convert input id's to embeddings
     with tf.variable_scope('embeddings'):
-      E = tf.get_variable('matrix', [self.alphabet_size, self.embed_size],
+      E = tf.get_variable('kernel', [self.alphabet_size, self.embed_size],
         initializer=tf.random_uniform_initializer(minval=-1., maxval=1.))
       embeds = tf.nn.embedding_lookup(E, self.inputs)
       self.get_embeddings = tf.nn.embedding_lookup(E, self.tokens)
     
-    # Feed embeddings into LS`TM stack
+    # Feed embeddings into LSTM stack
     with tf.variable_scope('lstm_stack') as scope:
       ### Train/validation feed
       cell = tf.contrib.rnn.MultiRNNCell(
@@ -58,20 +52,6 @@ class NextGram(Model):
         initial_state=self.initial_state)
       rnn_out = tf.reshape(tf.concat(axis=1, values=rnn_out),
         [-1, self.embed_size])
-      
-      ### Generative feed
-      gen_rnn_in = tf.tile(tf.reshape(self.gen_seed, [1, 1, self.embed_size]),
-        [self.batch_size, 1, 1])
-      gen_state = tuple([tuple(tf.unstack(l, axis=0))
-        for l in tf.unstack(self.gen_state, axis=0)])
-      scope.reuse_variables()
-      gen_rnn_out, gen_state = tf.nn.dynamic_rnn(cell, gen_rnn_in,
-        initial_state=gen_state)
-      # Preprocess and return RNN outputs
-      gen_rnn_out = tf.reshape(tf.concat(axis=1, values=gen_rnn_out),
-        [-1, self.embed_size])
-      gen_state = tf.stack(gen_state, axis=0)
-      self.gen_rnn_out = (gen_rnn_out, gen_state)
     
     # Softmax layer
     logits = tf.layers.dense(rnn_out, self.alphabet_size, name='dense')
