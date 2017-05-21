@@ -1,3 +1,8 @@
+# pylint: skip-file
+
+"""This module is still in progress, and will contain multiple implementations
+   for the differentiable neural computer (Graves et al., 2016)."""
+
 from six.moves import xrange
 
 import tensorflow as tf
@@ -15,10 +20,12 @@ def softcos(M, k, beta):
 
 
 class DNC(Model):
+  """TODO: add descriptive docstring."""
   
   def __init__(self, num_rnn_units=50, num_rnn_layers=1, batch_size=10,
     time_steps=20, num_memory_units=40, memory_unit_size=60, num_read_heads=2,
     output_dim=10, **kw):
+    """TODO: add documentation for the keyword arguments."""
     self.num_rnn_units = num_rnn_units
     self.num_rnn_layers = num_rnn_layers
     self.time_steps = time_steps
