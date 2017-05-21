@@ -1,11 +1,13 @@
-from six.moves import xrange
+"""Reader for JSON Trump tweets."""
 
 import json
 
-from base_datasets import Dataset
+from six.moves import xrange
+
+from ai.datasets import BaseDataset
 
 
-class TrumpTweets(Dataset):
+class TrumpTweets(BaseDataset):
   """Reader for JSON Trump tweets."""
   
   def __init__(self, **kw):
@@ -15,8 +17,8 @@ class TrumpTweets(Dataset):
     max_chars = self.num_steps + self.gram_order - 1
     for i in xrange(2009, 2018):
       
-      with open('data/trump_tweets/condensed_{}.json'.format(i)) as f:
-        file_data = json.load(f)
+      with open('data/trump_tweets/condensed_{}.json'.format(i)) as json_file:
+        file_data = json.load(json_file)
       
       for tweet_data in file_data:
         tweet = self.tokenize(tweet_data['text'][:max_chars], add_eos=True)
@@ -26,4 +28,4 @@ class TrumpTweets(Dataset):
           tweet.append(self.char_to_ix['_PAD'])
         tweets.append(tweet)
     
-    self.make_triples(tweets)
+    self.make_pairs(tweets)

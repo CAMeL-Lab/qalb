@@ -1,17 +1,20 @@
+"""Reader for WhastApp exported chat history text files."""
+
 import re
 
-from base_datasets import Dataset
+from ai.datasets import BaseDataset
 
 
-class WhatsAppChats(Dataset):
+class WhatsAppChats(BaseDataset):
   """Reader for WhastApp exported chat history text files."""
   
   def __init__(self, filename='rafi.txt', **kw):
     super(WhatsAppChats, self).__init__(**kw)
-    with open('data/whatsapp/' + filename) as f:
-      raw_lines = f.readlines()
+    with open('data/whatsapp/' + filename) as chat_history_file:
+      raw_lines = chat_history_file.readlines()
     
     max_chars = self.num_steps + self.gram_order - 1
+    # pylint: disable=line-too-long
     very_ugly_re = r'[0-9]{1,2}/[0-9]{1,2}/[0-9]{1,2}, [0-9]{1,2}:[0-9]{1,2}:[0-9]{1,2} [AP]M: (?:[^:]+): ([^\r]{1,%s})' % max_chars
     
     # Tokenize and chop lines to `num_steps` limit.
@@ -25,4 +28,4 @@ class WhatsAppChats(Dataset):
         lines.append(line)
     
     del raw_lines  # just for memory efficiency
-    self.make_triples(lines)
+    self.make_pairs(lines)

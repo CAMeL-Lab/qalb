@@ -1,16 +1,18 @@
+"""Reader for generic text files."""
+
 from six.moves import xrange
 
-from base_datasets import Dataset
+from ai.datasets import BaseDataset
 
 
-class TextFile(Dataset):
+class TextFile(BaseDataset):
   """Reader for generic text files."""
   
   def __init__(self, filepath, **kw):
     super(TextFile, self).__init__(**kw)
     
-    with open(filepath) as f:
-      raw_data = f.read()
+    with open(filepath) as text_file:
+      raw_data = text_file.read()
     data = []
     
     # Remove the last entry that might have length < `num_steps`.
@@ -19,4 +21,4 @@ class TextFile(Dataset):
       data.append(self.tokenize(raw_data[i:i+max_chars], add_eos=True))
     
     del raw_data  # just for memory efficiency
-    self.make_triples(data)
+    self.make_pairs(data)
