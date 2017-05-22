@@ -100,7 +100,8 @@ class BaseQALB(BaseDataset):
     for label_id in _label_ids:
       label_ids.append(label_id)
     label_ids.append(self.type_to_ix['_EOS'])
-    # Append padding tokens until maximum length is reached
+    # TODO: do padding on batch generation. Consumes less memory and is needed
+    # for buckets to work anyway.
     while len(input_ids) < self.num_steps:
       input_ids.append(self.type_to_ix['_PAD'])
     while len(label_ids) < self.num_steps:
