@@ -38,20 +38,32 @@ def apply_corrections(text, corrections):
 class WordQALB(BaseDataset):
   """TODO: add descriptive docstring."""
   
-  def __init__(self, **kw):
+  def __init__(self, file_root, sbw='.sbw', **kw):
+    """TODO: add descriptive docstring."""
     super(WordQALB, self).__init__(**kw)
+    self.file_root = file_root
+    # Safe Buckwalter extension
+    if not sbw:
+      sbw = ''
+    self.sbw = sbw
     data_dir = os.path.join('ai', 'datasets', 'data', 'qalb')
     # Prepare training data
-    train_labels = self.maybe_flatten_gold(
-      os.path.join(data_dir, 'QALB-Train2014')
+    train_input_path = os.path.join(
+      data_dir, self.file_root + '.train.sent' + self.sbw
     )
-    with open(os.path.join(data_dir, 'QALB-Train2014.sent.sbw')) as train_file:
+    train_labels = self.maybe_flatten_gold(
+      os.path.join(data_dir, self.file_root + '.train')
+    )
+    with open(train_input_path) as train_file:
       self.train_pairs = self.make_pairs(train_file.readlines(), train_labels)
     # Prepare validation data
-    valid_labels = self.maybe_flatten_gold(
-      os.path.join(data_dir, 'QALB-Dev2014')
+    valid_input_path = os.path.join(
+      data_dir, self.file_root + '.valid.sent' + self.sbw
     )
-    with open(os.path.join(data_dir, 'QALB-Dev2014.sent.sbw')) as valid_file:
+    valid_labels = self.maybe_flatten_gold(
+      os.path.join(data_dir, self.file_root + '.valid')
+    )
+    with open(valid_input_path) as valid_file:
       self.valid_pairs = self.make_pairs(valid_file.readlines(), valid_labels)
   
   # TODO: make two different methods for pair making in parent class to avoid
@@ -73,23 +85,20 @@ class WordQALB(BaseDataset):
       pairs.append((result, ))
   
   @classmethod
-  def maybe_flatten_gold(cls, file_root, sbw='.sbw'):
+  def flatten_gold(cls, file_root):
     """Create and return the contents a provided filename that generates a
        parallel corpus to the inputs, following the corrections provided in the
-       default gold file m2 format. Optionally the file can be in safe
-       buckwalter format (romanized Arabic). Note that this step is necessary
-       for seq2seq training, and code cannot be borrowed from the evaluation 
-       script because it never flattens the system output; instead, it finds
-       the minimum number of corrections that map the input into the output."""
-    if not sbw:
-      sbw = ''
-    with open(file_root + '.m2' + sbw) as m2_file:
+       default gold file m2 format. Note that this step is necessary for
+       seq2seq training, and code cannot be borrowed from the evaluation script
+       because it never flattens the system output; instead, it finds the
+       minimum number of corrections that map the input into the output."""
+    with open(file_root + '.m2' + self.sbw) as m2_file:
       raw_m2_data = m2_file.read().split('\n\n')[:-1]  # remove last empty str
     result = []
     for raw_pair in raw_m2_data:
       text = raw_pair.split('\n')[0][2:]  # remove the S marker
       corrections = map(parse_correction, raw_pair.split('\n')[1:])
       result.append(apply_corrections(text, corrections))
-    with open(file_root + '.gold' + sbw, 'w') as gold_file:
+    with open(file_root + '.gold' + self.sbw, 'w') as gold_file:
       gold_file.writelines(result)
     return result
