@@ -93,7 +93,3 @@ class NextGram(BaseModel):
     # Operation for decaying learning rate
     with tf.name_scope('decay_lr'):
       self.decay_lr = tf.assign(self._lr, self._lr * self.lr_decay)
-
-
-class NextGramWithEmbeddings(NextGram):
-  pass

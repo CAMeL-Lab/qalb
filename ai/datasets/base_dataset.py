@@ -37,7 +37,7 @@ class BaseDataset(object):
     self.type_to_ix = dict(map(dictarg, xrange(len(self.ix_to_type))))
   
   def tokenize(self, input_list):
-    """Converts the argument list to a list of integer tokens, each
+    """Converts the argument list or string to a list of integer tokens, each
        representing a unique type. If the charachter is not registered, it will
        be added to the `type_to_ix` and `ix_to_type` attributes."""
     result = []
