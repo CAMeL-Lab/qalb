@@ -59,7 +59,7 @@ class BaseDataset(object):
        be specified with `train_data_ratio`. Override if necessary."""
     make_pairs = lambda line: (line[:-1], line[1:])
     pairs = map(make_pairs, lines)
-    num_train_pairs = int(n * train_data_ratio)
+    num_train_pairs = int(len(lines) * train_data_ratio)
     self.train_pairs = pairs[:num_train_pairs]
     self.valid_pairs = pairs[num_train_pairs:]
   
