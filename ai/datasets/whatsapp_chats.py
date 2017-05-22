@@ -22,7 +22,7 @@ class WhatsAppChats(BaseDataset):
     for raw_line in raw_lines:
       match = re.match(very_ugly_re, raw_line)
       if match:
-        line = self.tokenize(match.group(1), add_eos=True)
+        line = self.tokenize(match.group(1))
         while len(line) <= self.num_steps:
           line.append(self.type_to_ix['_PAD'])
         lines.append(line)

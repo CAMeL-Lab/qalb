@@ -21,7 +21,7 @@ class TrumpTweets(BaseDataset):
         file_data = json.load(json_file)
       
       for tweet_data in file_data:
-        tweet = self.tokenize(tweet_data['text'][:max_chars], add_eos=True)
+        tweet = self.tokenize(tweet_data['text'][:max_chars])
         # Optimization: instead of concatenating the _PAD token for the shifted
         # tweet, append it and exclude it later (hence the <= rather than <).
         while len(tweet) <= self.num_steps:

@@ -10,27 +10,33 @@ class BaseDataset(object):
      types, tokenizing and untokenizing methods, dataset
      preparation, and batch generation."""
     
-  def __init__(self, batch_size=20, num_steps=50, gram_order=1, shuffle=False):
+  def __init__(self, max_types=None, batch_size=20, num_steps=50, gram_order=1,
+               shuffle=False):
     """Keyword arguments:
+       `max_types`: an upper bound for the vocabulary size (no bound if falsy),
        `batch_size`: number of lines per training batch,
        `num_steps`: specifies the max length of a line,
        `gram_order`: number of original types in the n-gram,
        `shuffle`: whether to shuffle the list of generated triples."""
+    self.max_types = max_types
     self.batch_size = batch_size
     self.num_steps = num_steps
     self.gram_order = gram_order
     self.shuffle = shuffle
     self.train_pairs = []
     self.valid_pairs = []
-    # Data structures to tokenize and untokenize data in O(1) time
-    self.ix_to_type = ['_PAD', '_EOS']
-    self.num_special_types = len(self.ix_to_type)  # for override purposes
-    # The `type_to_ix` dict will be {'_PAD': 0, '_EOS': 1} but the code below
-    # allows to add any extra defaults without modifying both data structures.
+    # Data structures to tokenize and untokenize data in O(1) time.
+    # By default, we add four tokens:
+    # '_PAD': padding for examples with variable size and model of fixed size,
+    # '_EOS': end of string added before padding to aid the prediction process,
+    # '_GO': go token added as the first decoder input for seq2seq models,
+    # '_UNK': unknown token used to cover unknown types in the dataset.
+    self.ix_to_type = ['_PAD', '_EOS', '_GO', '_UNK']
+    # Allow to add any extra defaults without modifying both data structures.
     dictarg = lambda i: [self.ix_to_type[i], i]
-    self.type_to_ix = dict(map(dictarg, xrange(self.num_special_types)))
+    self.type_to_ix = dict(map(dictarg, xrange(len(self.ix_to_type))))
   
-  def tokenize(self, input_list, add_eos=False):
+  def tokenize(self, input_list):
     """Converts the argument list to a list of integer tokens, each
        representing a unique type. If the charachter is not registered, it will
        be added to the `type_to_ix` and `ix_to_type` attributes."""
@@ -38,19 +44,19 @@ class BaseDataset(object):
     for i in xrange(len(input_list) - (self.gram_order - 1)):
       gram = input_list[i:i+self.gram_order]
       if gram not in self.type_to_ix:
-        self.type_to_ix[gram] = len(self.ix_to_type)
-        self.ix_to_type.append(gram)
+        if not self.max_types or self.num_types() < self.max_types:
+          self.type_to_ix[gram] = len(self.ix_to_type)
+          self.ix_to_type.append(gram)
+        else:
+          gram = '_UNK'
       result.append(self.type_to_ix[gram])
-    if add_eos:
-      result.append(self.type_to_ix['_EOS'])
     return result
   
   def untokenize(self, tokens):
     """Converts the argument list of integer ids back to a string."""
     result = ''
     for t in tokens:
-      if t > self.num_special_types:
-        result += self.ix_to_type[t][0]
+      result += self.ix_to_type[t][0]
     return result
   
   def make_pairs(self, lines, train_data_ratio=.7):
