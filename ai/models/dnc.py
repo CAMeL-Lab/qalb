@@ -4,7 +4,6 @@
    for the differentiable neural computer (Graves et al., 2016)."""
 
 from six.moves import xrange
-
 import tensorflow as tf
 
 from ai.models import BaseModel
