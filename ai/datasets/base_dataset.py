@@ -82,6 +82,6 @@ class BaseDataset(object):
     valid_batches = [b for b in valid_batches if len(b) == self.batch_size]
     return zip(train_batches, valid_batches)
   
-  def size(self):
+  def num_types(self):
     """Return the number of unique n-grams in the dataset."""
     return len(self.ix_to_type)

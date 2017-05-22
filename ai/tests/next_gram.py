@@ -37,7 +37,7 @@ dataset = TextFile('bible.txt', batch_size=BATCH_SIZE, gram_order=GRAM_ORDER,
 # Build the computational graph
 graph = tf.Graph()
 with graph.as_default():
-  m = NextGram(alphabet_size=dataset.size(), restore=should_restore,
+  m = NextGram(alphabet_size=dataset.num_types(), restore=should_restore,
     model_name=model_name, lr=LR, lr_decay=LR_DECAY, batch_size=BATCH_SIZE,
     num_steps=NUM_STEPS, embed_size=EMBED_SIZE, num_rnn_layers=NUM_RNN_LAYERS,
     max_grad_norm=MAX_GRAD_NORM, rnn_cell=RNN_CELL)
