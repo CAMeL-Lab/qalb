@@ -24,7 +24,7 @@ class WhatsAppChats(BaseDataset):
       if match:
         line = self.tokenize(match.group(1), add_eos=True)
         while len(line) <= self.num_steps:
-          line.append(self.char_to_ix['_PAD'])
+          line.append(self.type_to_ix['_PAD'])
         lines.append(line)
     
     del raw_lines  # just for memory efficiency

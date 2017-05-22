@@ -25,7 +25,7 @@ class TrumpTweets(BaseDataset):
         # Optimization: instead of concatenating the _PAD token for the shifted
         # tweet, append it and exclude it later (hence the <= rather than <).
         while len(tweet) <= self.num_steps:
-          tweet.append(self.char_to_ix['_PAD'])
+          tweet.append(self.type_to_ix['_PAD'])
         tweets.append(tweet)
     
     self.make_pairs(tweets)
