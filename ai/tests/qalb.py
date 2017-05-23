@@ -63,5 +63,11 @@ l2_word_buckets = [(82, 89), (138, 149), (186, 200), (434, 486)]
 l2_char_buckets = [(440, 440), (741, 744), (985, 1012), (2189, 2286)]
 
 
-qalb_char_data = CharQALB('QALB', num_steps=185)
-qalb_word_data = WordQALB('QALB', num_steps=633)
+print("Building character-level QALB data...")
+qalb_char_data = CharQALB('QALB', batch_size=32, buckets=qalb_char_buckets)
+
+#print(map(len, qalb_char_data.train_pairs))
+#print(map(len, qalb_char_data.valid_pairs))
+batch_inputs, batch_labels = qalb_char_data.get_batches()
+for i in range(4):
+  print(batch_inputs[i].shape, batch_labels[i].shape)

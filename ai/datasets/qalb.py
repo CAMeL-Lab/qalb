@@ -6,8 +6,10 @@
 from __future__ import print_function
 
 import os
+import random
 
 from six.moves import xrange
+import numpy as np
 
 from ai.datasets import BaseDataset
 
@@ -42,17 +44,19 @@ class BaseQALB(BaseDataset):
      and preprocessing the data files, and children classes can specify
      different tokenizations (word-based, character-based, etc)."""
   
-  def __init__(self, file_root, sbw='.sbw', **kw):
+  def __init__(self, file_root, buckets=None, sbw='.sbw', **kw):
     """Arguments:
        `file_root`: the root name of the files in the data/qalb directory.
         The constructor searches for .*.sent, .*.m2, where * is train and dev.
        Keyword arguments:
+       `buckets`: sorted list of pairs with padding groups (none by default),
        `sbw`: name of the safe Buckwalter extension (or none if it's falsy).
        Note on usage: to account for the _GO and _EOS tokens that the labels
        have inserted, if the maximum length sequences are in the labels, use
        two extra time steps if the goal is to not truncate anything."""
     super(BaseQALB, self).__init__(**kw)
     self.file_root = file_root
+    self.buckets = buckets
     if not sbw:
       sbw = ''
     self.sbw = sbw
@@ -75,38 +79,8 @@ class BaseQALB(BaseDataset):
     )
     with open(valid_input_path) as valid_file:
       self.valid_pairs = self.make_pairs(valid_file.readlines(), valid_labels)
-  
-  # TODO: make two different methods for pair making in parent class to avoid
-  # child method with different arguments. One method to make the pairs from
-  # respective train and validation files, and one to make the pairs from a
-  # single file and allowing to specify the ratio of data used for training.
-  # pylint: disable=signature-differs
-  def make_pairs(self, text_lines, text_labels):
-    pass
-  
-  def make_pair(self, input_line, label_line):
-    """Given an input and label in text or list form, convert the n-grams to
-       their unique type id's. This also takes care of padding and adding
-       other tokens that are helpful for the decoder RNN. If the arguments are
-       strings, the `tokenize` method will iterate over the strings resulting
-       in character-level types. If they are iterables instead, the method will
-       use the elements (or their n-grams) as their types."""
-    # This already takes care of making the n-grams their own unique types.
-    input_ids = self.tokenize(input_line)
-    # Optimization with append instead of concatenate. Necessary when
-    # working at the character level as the arrays get very long.
-    label_ids = [self.type_to_ix['_GO']]
-    _label_ids = self.tokenize(label_line)
-    for label_id in _label_ids:
-      label_ids.append(label_id)
-    label_ids.append(self.type_to_ix['_EOS'])
-    # TODO: do padding on batch generation. Consumes less memory and is needed
-    # for buckets to work anyway.
-    while len(input_ids) < self.num_steps:
-      input_ids.append(self.type_to_ix['_PAD'])
-    while len(label_ids) < self.num_steps:
-      label_ids.append(self.type_to_ix['_PAD'])
-    return input_ids, label_ids
+    # Pad and put the pairs into buckets after both have been built
+    self.pad_and_bucket_pairs()
   
   def flatten_gold(self, file_root):
     """Create and return the contents a provided filename that generates a
@@ -125,17 +99,89 @@ class BaseQALB(BaseDataset):
     with open(file_root + '.gold' + self.sbw, 'w') as gold_file:
       gold_file.writelines(result)
     return result
+  
+  def make_pair(self, input_line, label_line):
+    """Given an input and label in text or list form, convert the n-grams to
+       their unique type id's. This also takes care of padding and adding
+       other tokens that are helpful for the decoder RNN. If the arguments are
+       strings, the `tokenize` method will iterate over the strings resulting
+       in character-level types. If they are iterables instead, the method will
+       use the elements (or their n-grams) as their types."""
+    # This already takes care of making the n-grams their own unique types.
+    input_ids = self.tokenize(input_line)
+    # Optimization with append instead of concatenate. Necessary when
+    # working at the character level as the arrays get very long.
+    label_ids = [self.type_to_ix['_GO']]
+    _label_ids = self.tokenize(label_line)
+    for label_id in _label_ids:
+      label_ids.append(label_id)
+    label_ids.append(self.type_to_ix['_EOS'])
+    return input_ids, label_ids
+  
+  def pad_and_bucket_pairs(self):
+    """Adds padding to the inputs and labels, depending on the initialized
+       buckets. Note this method requires the `train_pairs` and `valid_pairs`
+       attributes to be fully built by the `make_pairs` method, and that they
+       will be changed to the form (bucket_1, ..., bucket_k)."""
+    if not self.buckets:
+      # Get the max lengths of the input and label sequences (quick one-liners)
+      # pylint: disable=deprecated-lambda
+      max_train = map(lambda seq: max(map(len, seq)), zip(*self.train_pairs))
+      max_valid = map(lambda seq: max(map(len, seq)), zip(*self.valid_pairs))
+      # Build single bucket with the max of each so everything can be fed
+      self.buckets = [map(max, zip(max_train, max_valid))]
+    # Actually do the padding
+    temp_train_pairs = [[] for _ in self.buckets]
+    temp_valid_pairs = [[] for _ in self.buckets]
+    for i, pair_set in enumerate([self.train_pairs, self.valid_pairs]):
+      for input_seq, label_seq in pair_set:
+        for b_id, (max_i, max_l) in enumerate(self.buckets):
+          if len(input_seq) <= max_i and len(label_seq) <= max_l:
+            while len(input_seq) < max_i:
+              input_seq.append(self.type_to_ix['_PAD'])
+            while len(label_seq) < max_l:
+              label_seq.append(self.type_to_ix['_PAD'])
+            if i == 0:
+              temp_train_pairs[b_id].append([input_seq, label_seq])
+            else:
+              temp_valid_pairs[b_id].append([input_seq, label_seq])
+            break
+    self.train_pairs = temp_train_pairs
+    self.valid_pairs = temp_valid_pairs
+  
+  def get_batches(self):
+    batch_inputs = [[] for _ in self.buckets]
+    batch_labels = [[] for _ in self.buckets]
+    for b_id in xrange(len(self.buckets)):
+      if self.shuffle:
+        random.shuffle(self.train_pairs[b_id])
+      for i in xrange(0, len(self.train_pairs[b_id]), self.batch_size):
+        batch_input, batch_label = zip(
+          *self.train_pairs[b_id][i:i+self.batch_size])
+        # All batches must have the same length
+        if len(batch_input) == self.batch_size and \
+           len(batch_label) == self.batch_size:
+          batch_inputs[b_id].append(batch_input)
+          batch_labels[b_id].append(batch_label)
+      batch_inputs[b_id] = np.array(batch_inputs[b_id], dtype=np.int32)
+      batch_labels[b_id] = np.array(batch_labels[b_id], dtype=np.int32)
+    return batch_inputs, batch_labels
 
 
 class CharQALB(BaseQALB):
   """Character-level data parser for QALB dataset."""
   
+  # TODO: make two different methods for pair making in parent class to avoid
+  # child method with different arguments. One method to make the pairs from
+  # respective train and validation files, and one to make the pairs from a
+  # single file and allowing to specify the ratio of data used for training.
+  # pylint: disable=signature-differs
   def make_pairs(self, input_lines, label_lines):
     pairs = []
     for i in xrange(len(input_lines)):
       # Remove the document id (first word) and truncate to max char length
-      input_line = ' '.join(input_lines[i].split()[1:])[:self.num_steps]
-      label_line = label_lines[i][:self.num_steps-2]
+      input_line = ' '.join(input_lines[i].split()[1:])
+      label_line = label_lines[i]
       pairs.append(self.make_pair(input_line, label_line))
     return pairs
 
@@ -143,11 +189,12 @@ class CharQALB(BaseQALB):
 class WordQALB(BaseQALB):
   """Word-level data parser for QALB dataset."""
   
+  # pylint: disable=signature-differs
   def make_pairs(self, input_lines, label_lines):
     pairs = []
     for i in xrange(len(input_lines)):
       # Compensate for document id
-      input_line = input_lines[i].split()[1:self.num_steps+1]
-      label_line = label_lines[i].split()[:self.num_steps-2]
+      input_line = input_lines[i].split()[1:]
+      label_line = label_lines[i].split()
       pairs.append(self.make_pair(input_line, label_line))
     return pairs
