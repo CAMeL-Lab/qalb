@@ -13,6 +13,7 @@ class NextGram(BaseModel):
                num_steps=40, embedding_size=100, rnn_layers=2,
                max_grad_norm=5., rnn_cell=tf.contrib.rnn.LSTMBlockCell, **kw):
     """Keyword arguments:
+       `num_types`: the vocabulary size (way faster to provide than infer),
        `lr`: the learning rate,
        `lr_decay`: learning rate decay (op must be manually called),
        `batch_size`: number of inputs per training step,
@@ -21,9 +22,9 @@ class NextGram(BaseModel):
        `rnn_layers`: the number of RNN cells to be stacked,
        `max_grad_norm`: gradient norm clipping value to avoid exploding values,
        `rnn_cell`: the RNN class to be used (e.g. LSTM, GRU)."""
+    self.num_types = num_types
     self.lr = lr
     self.lr_decay = lr_decay
-    self.num_types = num_types
     self.batch_size = batch_size
     self.num_steps = num_steps
     self.embedding_size = embedding_size
