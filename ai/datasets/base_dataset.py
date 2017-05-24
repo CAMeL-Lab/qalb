@@ -1,14 +1,19 @@
 """TODO: add descriptive module docstring."""
 
+from abc import ABCMeta
 import random
 
 from six.moves import xrange
 
 
+# TODO: make this class more abstract and create abstract subclasses with more
+# specific methods. For instance, `make_pairs` here is implemented for
+# language models, and this class is used for other tasks like seq2seq.
 class BaseDataset(object):
-  """Base class for parsing text datasets. Includes defaults for special
-     types, tokenizing and untokenizing methods, dataset
-     preparation, and batch generation."""
+  """Abstract class for parsing text datasets. Includes defaults for special
+     types, tokenizing and untokenizing methods, dataset preparation, and
+     batch generation."""
+  __metaclass__ = ABCMeta
     
   def __init__(self, max_types=None, batch_size=20, num_steps=50, gram_order=1,
                shuffle=False):
