@@ -53,6 +53,7 @@ class BaseDataset(object):
           self.type_to_ix[gram] = len(self.ix_to_type)
           self.ix_to_type.append(gram)
         else:
+          # pylint: disable=redefined-variable-type
           gram = '_UNK'
       result.append(self.type_to_ix[gram])
     return result
