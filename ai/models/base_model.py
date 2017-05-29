@@ -3,6 +3,7 @@
    abstractions that are desirable for all the other models; no matter what
    their functionality or computational graphs are."""
 
+from abc import ABCMeta, abstractmethod
 import os
 
 import tensorflow as tf
@@ -10,6 +11,7 @@ import tensorflow as tf
 
 class BaseModel(object):
   """Model abstraction to handle restoring variables and summary writers."""
+  __metaclass__ = ABCMeta
   
   def __init__(self, restore=False, model_name='default'):
     """The constructor builds the model's computational graph. Thus, it should
@@ -27,6 +29,7 @@ class BaseModel(object):
     self.train_writer = None
     self.valid_writer = None
   
+  @abstractmethod
   def build_graph(self):
     """Overridable. All placeholders and operations that define the
        computational graph should be defined in this method."""

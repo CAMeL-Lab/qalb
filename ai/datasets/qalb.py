@@ -40,7 +40,7 @@ def apply_corrections(text, corrections):
 
 def max_length_seq(pairs):
   """Get the maximum sequence length of the examples in the provided pairs."""
-  return map(lambda seq: max(map(len, seq)), zip(*pairs))
+  return [max(map(len, seq)) for seq in zip(*pairs)]
 
 
 class BaseQALB(BaseDataset):
@@ -110,12 +110,7 @@ class BaseQALB(BaseDataset):
        use the elements (or their n-grams) as their types."""
     # This already takes care of making the n-grams their own unique types.
     input_ids = self.tokenize(input_line)
-    # Optimization with append instead of concatenate. Necessary when
-    # working at the character level as the arrays get very long.
-    label_ids = [self.type_to_ix['_GO']]
-    _label_ids = self.tokenize(label_line)
-    for label_id in _label_ids:
-      label_ids.append(label_id)
+    label_ids = self.tokenize(label_line)
     label_ids.append(self.type_to_ix['_EOS'])
     return input_ids, label_ids
   
@@ -142,23 +137,45 @@ class BaseQALB(BaseDataset):
 class DynamicQALB(BaseQALB):
   """Non-bucket based data parser for QALB dataset."""
   
-  def get_batch(self):
-    """Draw random examples and pad them to the largest sequence drawn."""
-    batches = [self.train_pairs[np.random.randint(len(self.train_pairs))]
-               for _ in xrange(self.batch_size)]
-    max_input_length, max_label_length = max_length_seq(batches)
+  def __init__(self, file_root, max_input_length=None, max_label_length=None,
+               **kw):
+    """Extra keyword arguments:
+       `max_input_length`: maximum sequence length for the inputs,
+       `max_label_length`: maximum sequence length for the labels."""
+    super(DynamicQALB, self).__init__(file_root, **kw)
+    self.max_input_length = max_input_length
+    self.max_label_length = max_label_length
+  
+  def get_batch(self, draw_from_valid=False):
+    """Draw random examples and pad them to the largest sequence drawn.
+       The batch can be drawn from the validation set if the keyowrd argument
+       `draw_from_valid` is set to True."""
+    batch = []
+    while len(batch) < self.batch_size:
+      if draw_from_valid:
+        sequence = self.valid_pairs[np.random.randint(len(self.valid_pairs))]
+      else:
+        sequence = self.train_pairs[np.random.randint(len(self.train_pairs))]
+      if len(sequence[0]) <= self.max_input_length and \
+         len(sequence[1]) <= self.max_label_length:
+        batch.append(sequence)
     for i in xrange(self.batch_size):
-      while len(batches[i][0]) < max_input_length:
-        batches[i][0].append(self.type_to_ix['_PAD'])
-      while len(batches[i][1]) < max_label_length:
-        batches[i][1].append(self.type_to_ix['_PAD'])
-    return batches
+      max_input_length = self.max_input_length
+      max_label_length = self.max_label_length
+      if max_input_length is None or max_label_length is None:
+        max_input_length, max_label_length = max_length_seq(batch)
+      while len(batch[i][0]) < max_input_length:
+        batch[i][0].append(self.type_to_ix['_PAD'])
+      while len(batch[i][1]) < max_label_length:
+        batch[i][1].append(self.type_to_ix['_PAD'])
+    return zip(*batch)  # return as (batch_of_inputs, batch_of_labels)
 
 
 class BucketQALB(BaseQALB):
   """Bucket-based data parser for QALB dataset."""
   
   def __init__(self, file_root, buckets=None, **kw):
+    """TODO: add documentation for buckets"""
     super(BucketQALB, self).__init__(file_root, **kw)
     self.buckets = buckets
     self.pad_and_bucket_pairs()

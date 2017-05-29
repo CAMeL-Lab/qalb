@@ -53,17 +53,14 @@ class BaseDataset(object):
           self.type_to_ix[gram] = len(self.ix_to_type)
           self.ix_to_type.append(gram)
         else:
-          # pylint: disable=redefined-variable-type
-          gram = '_UNK'
+          gram = '_UNK'  # pylint: disable=redefined-variable-type
       result.append(self.type_to_ix[gram])
     return result
   
-  def untokenize(self, tokens):
+  def untokenize(self, tokens, join_str=' ', include_special=True):
     """Converts the argument list of integer ids back to a string."""
-    result = ''
-    for t in tokens:
-      result += self.ix_to_type[t][0]
-    return result
+    return join_str.join([self.ix_to_type[t][0] for t in tokens
+                          if include_special or t > 3])
   
   def make_pairs(self, lines, train_data_ratio=.7):
     """Given a list `lines` containing lists of ids, return a list of input
@@ -97,3 +94,8 @@ class BaseDataset(object):
   def num_types(self):
     """Return the number of unique n-grams in the dataset."""
     return len(self.ix_to_type)
+  
+  def num_pairs(self):
+    """Return the number of train and valid example pairs in the dataset."""
+    return (len(self.train_pairs), len(self.valid_pairs))
+  
