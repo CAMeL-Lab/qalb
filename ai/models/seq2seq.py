@@ -18,7 +18,7 @@ class Seq2Seq(BaseModel):
                pad_id=0, go_id=2, lr=1., lr_decay=1., batch_size=32,
                embedding_size=128,  rnn_layers=2, bidirectional_encoder=True,
                max_grad_norm=5, rnn_cell=None, use_luong_attention=True,
-               sampling_probability=0., **kw):
+               p_sample_decay=0., **kw):
     """TODO: add documentation for all arguments."""
     self.num_types = num_types
     self.max_encoder_length = max_encoder_length
@@ -34,7 +34,7 @@ class Seq2Seq(BaseModel):
     self.max_grad_norm = max_grad_norm
     self.rnn_cell = rnn_cell
     self.use_luong_attention = use_luong_attention
-    self.sampling_probability = sampling_probability
+    self.p_sample_decay = p_sample_decay
     super(Seq2Seq, self).__init__(**kw)
   
   def build_graph(self):
@@ -51,7 +51,8 @@ class Seq2Seq(BaseModel):
     )
     
     self._lr = tf.Variable(self.lr, trainable=False, name='lr')
-    
+    self._p_sample = tf.Variable(0., trainable=False, name='p_sample')
+        
     with tf.variable_scope('embeddings'):
       sqrt3 = 3 ** .5  # Uniform(-sqrt3, sqrt3) has variance 1
       embedding_kernel = tf.get_variable(
@@ -153,5 +154,5 @@ class Seq2Seq(BaseModel):
     """Overridable that returns a helper instance for the decoder."""
     return tf.contrib.seq2seq.ScheduledOutputTrainingHelper(
       decoder_input, tf.tile([self.max_decoder_length], [self.batch_size]),
-      self.sampling_probability
+      self._p_sample
     )

@@ -76,13 +76,13 @@ LR = 1e-3
 LR_DECAY = .9
 NUM_BAD_TO_DECAY = 5
 BATCH_SIZE = 64
-EMBEDDING_SIZE = 256
+EMBEDDING_SIZE = 512
 RNN_LAYERS = 1
 BIDIRECTIONAL_ENCODER = True
 MAX_GRAD_NORM = 5.
 RNN_CELL = tf.contrib.rnn.LSTMBlockCell
 USE_LUONG_ATTENTION = True
-SAMPLING_PROBABILITY = 0.
+P_SAMPLE_M = .1 / 300  # p/k => probability p at step k
 
 
 ### CONFIG
@@ -92,8 +92,8 @@ MAX_DECODER_LENGTH = 50
 NUM_STEPS_PER_EVAL = 10
 NUM_STEPS_PER_SAVE = 100
 NUM_BAD_TO_STOP = 50
-RESTORE = False
-MODEL_NAME = 'qalb-word-sampling-0'
+RESTORE = True
+MODEL_NAME = 'qalb-word-256'
 
 
 print("Building dynamic word-level QALB data...")
@@ -113,8 +113,7 @@ with graph.as_default():
               rnn_layers=RNN_LAYERS,
               bidirectional_encoder=BIDIRECTIONAL_ENCODER,
               max_grad_norm=MAX_GRAD_NORM, rnn_cell=RNN_CELL,
-              use_luong_attention=USE_LUONG_ATTENTION,
-              sampling_probability=SAMPLING_PROBABILITY, restore=RESTORE,
+              use_luong_attention=USE_LUONG_ATTENTION, restore=RESTORE,
               model_name=MODEL_NAME)
 
 with tf.Session(graph=graph) as sess:
@@ -132,15 +131,22 @@ with tf.Session(graph=graph) as sess:
   
   print("Entering training loop...")
   while True:
+    # Gradient descent and backprop
     train_inputs, train_labels = dataset.get_batch()
     train_fd = {m.inputs: train_inputs, m.labels: train_labels}
     sess.run(m.train_op, feed_dict=train_fd)
+    
+    # Linear model for change in the sampling probability
     step = m.global_step.eval()
+    # sess.run(tf.assign(m._p_sample,
+    #   tf.reduce_min([1., tf.cast(step, tf.float32) * P_SAMPLE_M]))
+    # )
     
     if step % NUM_STEPS_PER_EVAL == 0:
       # Show learning rate and sample outputs from training set
-      lr, train_ppx, train_output, train_summary = sess.run(
-        [m._lr, m.perplexity, m.output, m.summary_op], feed_dict=train_fd
+      lr, train_ppx, train_output, p_sample, train_summary = sess.run(
+        [m._lr, m.perplexity, m.output, m._p_sample, m.summary_op],
+        feed_dict=train_fd
       )
       # Evaluate and show samples on validation set
       valid_inputs, valid_labels = dataset.get_batch(draw_from_valid=True)
@@ -151,9 +157,11 @@ with tf.Session(graph=graph) as sess:
       m.train_writer.add_summary(train_summary, global_step=step)
       m.valid_writer.add_summary(valid_summary, global_step=step)
       print("================================================================")
-      print("Step {0} (lr={1}, train_ppx={2}, valid_ppx={3})".format(
-        step, str(lr)[:6], train_ppx, valid_ppx
-      ))
+      print(
+        "Step {0} (lr={1}, p_sample={2}, train_ppx={3}, valid_ppx={4})".format(
+          step, lr, p_sample, train_ppx, valid_ppx
+        )
+      )
       print("================================================================")
       print("Sample train input:")
       print(dataset.untokenize(train_inputs[0]))
