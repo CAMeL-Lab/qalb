@@ -156,8 +156,12 @@ class DynamicQALB(BaseQALB):
         sequence = self.valid_pairs[np.random.randint(len(self.valid_pairs))]
       else:
         sequence = self.train_pairs[np.random.randint(len(self.train_pairs))]
-      if len(sequence[0]) <= self.max_input_length and \
-         len(sequence[1]) <= self.max_label_length:
+      # Optionally discard examples past a maximum input or label length
+      input_ok = self.max_input_length is None \
+                 or len(sequence[0]) <= self.max_input_length
+      label_ok = self.max_label_length is None \
+                 or len(sequence[1]) <= self.max_label_length
+      if input_ok and label_ok:
         batch.append(sequence)
     for i in xrange(self.batch_size):
       max_input_length = self.max_input_length
@@ -240,7 +244,7 @@ class WordQALB(BaseQALB):
     pairs = []
     for i in xrange(len(input_lines)):
       # Compensate for document id
-      input_line = input_lines[i].split()[1:]
+      input_line = input_lines[i].split()[1:]  # remove document id
       label_line = label_lines[i].split()
       pairs.append(self.make_pair(input_line, label_line))
     return pairs

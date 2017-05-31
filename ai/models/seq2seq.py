@@ -1,7 +1,10 @@
 """TODO: add descriptive docstring."""
 
+from __future__ import division
+
 from six.moves import xrange
 import tensorflow as tf
+from tensorflow.python.layers.core import Dense
 
 from ai.models import BaseModel
 
@@ -15,15 +18,16 @@ class Seq2Seq(BaseModel):
      3. A `go_id` is reserved for the model to provide to the decoder."""
   
   def __init__(self, num_types=0, max_encoder_length=99, max_decoder_length=99,
-               pad_id=0, go_id=2, lr=1., lr_decay=1., batch_size=32,
+               pad_id=0, eos_id=1, go_id=2, lr=1., lr_decay=1., batch_size=32,
                embedding_size=128,  rnn_layers=2, bidirectional_encoder=True,
                max_grad_norm=5, rnn_cell=None, use_luong_attention=True,
-               p_sample_decay=0., **kw):
+               initial_p_sample=0., **kw):
     """TODO: add documentation for all arguments."""
     self.num_types = num_types
     self.max_encoder_length = max_encoder_length
     self.max_decoder_length = max_decoder_length
     self.pad_id = pad_id
+    self.eos_id = eos_id
     self.go_id = go_id
     self.lr = lr
     self.lr_decay = lr_decay
@@ -34,7 +38,7 @@ class Seq2Seq(BaseModel):
     self.max_grad_norm = max_grad_norm
     self.rnn_cell = rnn_cell
     self.use_luong_attention = use_luong_attention
-    self.p_sample_decay = p_sample_decay
+    self.initial_p_sample = initial_p_sample
     super(Seq2Seq, self).__init__(**kw)
   
   def build_graph(self):
@@ -46,21 +50,24 @@ class Seq2Seq(BaseModel):
       tf.int32, name='labels',
       shape=[self.batch_size, self.max_decoder_length]
     )
+    decoder_seed = tf.tile([self.go_id], [self.batch_size])
     decoder_ids = tf.concat(
       [tf.tile([[self.go_id]], [self.batch_size, 1]), self.labels[:, 1:]], 1
     )
     
     self._lr = tf.Variable(self.lr, trainable=False, name='lr')
-    self._p_sample = tf.Variable(0., trainable=False, name='p_sample')
+    self._p_sample = tf.Variable(
+      self.initial_p_sample, trainable=False, name='p_sample'
+    )
         
     with tf.variable_scope('embeddings'):
       sqrt3 = 3 ** .5  # Uniform(-sqrt3, sqrt3) has variance 1
-      embedding_kernel = tf.get_variable(
+      self.embedding_kernel = tf.get_variable(
         'kernel', [self.num_types, self.embedding_size],
         initializer=tf.random_uniform_initializer(minval=-sqrt3, maxval=sqrt3)
       )
-      encoder_input = tf.nn.embedding_lookup(embedding_kernel, self.inputs)
-      decoder_input = tf.nn.embedding_lookup(embedding_kernel, decoder_ids)
+      encoder_input = self.get_embeddings(self.inputs)
+      decoder_input = self.get_embeddings(decoder_ids)
     
     with tf.variable_scope('encoder_rnn'):
       input_lengths = self.get_sequence_length(self.inputs)
@@ -85,7 +92,7 @@ class Seq2Seq(BaseModel):
           sequence_length=input_lengths
         )
     
-    with tf.variable_scope('decoder_rnn'):
+    with tf.variable_scope('decoder_rnn') as scope:
       # The first RNN is wrapped with the attention mechanism
       # TODO: add option to allow normalizing the energy term
       decoder_cell = self.rnn_cell(self.embedding_size)
@@ -108,17 +115,37 @@ class Seq2Seq(BaseModel):
           [decoder_cell] + [self.rnn_cell(self.embedding_size)
                             for _ in xrange(self.rnn_layers - 1)]
         )
-      decoder = tf.contrib.seq2seq.BasicDecoder(
-        decoder_cell, self.get_decoder_helper(decoder_input),
-        decoder_cell.zero_state(self.batch_size, tf.float32)
+      initial_state = decoder_cell.zero_state(self.batch_size, tf.float32)
+      # Training decoder
+      sampling_helper = tf.contrib.seq2seq.ScheduledOutputTrainingHelper(
+        decoder_input, tf.tile([self.max_decoder_length], [self.batch_size]),
+        self._p_sample
       )
-      decoder_output, _ = tf.contrib.seq2seq.dynamic_decode(decoder)
-      decoder_output = decoder_output.rnn_output
-    
-    logits = tf.layers.dense(decoder_output, self.num_types, name='dense')
+      decoder = tf.contrib.seq2seq.BasicDecoder(
+        decoder_cell, sampling_helper, initial_state
+      )
+      # Generative decoder
+      greedy_helper = tf.contrib.seq2seq.GreedyEmbeddingHelper(
+        self.get_embeddings, decoder_seed, self.eos_id
+      )
+      dense = Dense(self.num_types, name='dense')
+      generative_decoder = tf.contrib.seq2seq.BasicDecoder(
+        decoder_cell, greedy_helper, initial_state, output_layer=dense
+      )
+      # Run decoders
+      logits = tf.contrib.seq2seq.dynamic_decode(decoder)
+      logits = dense.apply(logits[0].rnn_output)
+      scope.reuse_variables()
+      generative_logits = tf.contrib.seq2seq.dynamic_decode(
+        generative_decoder, maximum_iterations=self.max_decoder_length
+      )
+      generative_logits = generative_logits[0].rnn_output
     
     # Index outputs (greedy)
     self.output = tf.argmax(logits, axis=2, name='output')
+    self.generative_output = tf.argmax(
+      generative_logits, axis=2, name='generative_output'
+    )
     
     # Weighted softmax cross entropy loss
     with tf.name_scope('loss'):
@@ -143,16 +170,13 @@ class Seq2Seq(BaseModel):
         zip(grads, tvars), global_step=self.global_step
       )
   
+  def get_embeddings(self, ids):
+    """Performs embedding lookup. Useful as a method for decoder helpers."""
+    return tf.nn.embedding_lookup(self.embedding_kernel, ids)
+  
   def get_sequence_length(self, sequence_batch):
     """Given a 2D batch of input sequences, return a vector with the lengths
        of every sequence excluding the paddings."""
     return tf.reduce_sum(
       tf.sign(tf.abs(sequence_batch - self.pad_id)), reduction_indices=1
-    )
-  
-  def get_decoder_helper(self, decoder_input):
-    """Overridable that returns a helper instance for the decoder."""
-    return tf.contrib.seq2seq.ScheduledOutputTrainingHelper(
-      decoder_input, tf.tile([self.max_decoder_length], [self.batch_size]),
-      self._p_sample
     )
