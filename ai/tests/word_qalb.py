@@ -34,6 +34,8 @@ tf.app.flags.DEFINE_boolean('use_luong_attention', True, "Set to False to use"
                             " Bahdanau (additive) attention.")
 tf.app.flags.DEFINE_float('initial_p_sample', 0., "Initial probability to."
                           "sample from the decoder's own predictions.")
+tf.app.flags.DEFINE_float('p_sample_decay', 0., "How much to change the"
+                          "decoder sampling probability at every time step.")
 
 ### CONFIG
 tf.app.flags.DEFINE_integer('num_steps_per_eval', 10, "Number of steps to wait"
@@ -104,13 +106,13 @@ def train():
       train_inputs, train_labels = dataset.get_batch()
       train_fd = {m.inputs: train_inputs, m.labels: train_labels}
       sess.run(m.train_op, feed_dict=train_fd)
+      # Decay sampling probability
+      new_p_sample = tf.reduce_min(
+        [1., m._p_sample.eval() + FLAGS.p_sample_decay]
+      )
+      sess.run(tf.assign(m._p_sample, new_p_sample))
       
-      # Linear model for change in the sampling probability
       step = m.global_step.eval()
-      # sess.run(tf.assign(m._p_sample,
-      #   tf.reduce_min([1., tf.cast(step, tf.float32) * P_SAMPLE_M]))
-      # )
-      
       if step % FLAGS.num_steps_per_eval == 0:
         # Show learning rate and sample outputs from training set
         lr, train_ppx, p_sample, train_summary = sess.run(
