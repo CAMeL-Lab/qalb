@@ -50,9 +50,13 @@ class Seq2Seq(BaseModel):
       tf.int32, name='labels',
       shape=[self.batch_size, self.max_decoder_length]
     )
-    decoder_seed = tf.tile([self.go_id], [self.batch_size])
     decoder_ids = tf.concat(
       [tf.tile([[self.go_id]], [self.batch_size, 1]), self.labels[:, 1:]], 1
+    )
+    # TODO: use a custom helper where we don't have to waste memory filling
+    # all the timesteps with tokens that will never be used.
+    decoder_seed_ids = tf.tile(
+      [[self.go_id]], [self.batch_size, self.max_decoder_length]
     )
     
     self._lr = tf.Variable(self.lr, trainable=False, name='lr')
@@ -68,6 +72,7 @@ class Seq2Seq(BaseModel):
       )
       encoder_input = self.get_embeddings(self.inputs)
       decoder_input = self.get_embeddings(decoder_ids)
+      decoder_seed = self.get_embeddings(decoder_seed_ids)
     
     with tf.variable_scope('encoder_rnn'):
       input_lengths = self.get_sequence_length(self.inputs)
@@ -125,14 +130,15 @@ class Seq2Seq(BaseModel):
         decoder_cell, sampling_helper, initial_state
       )
       # Generative decoder
-      greedy_helper = tf.contrib.seq2seq.GreedyEmbeddingHelper(
-        self.get_embeddings, decoder_seed, self.eos_id
+      generative_helper = tf.contrib.seq2seq.ScheduledOutputTrainingHelper(
+        decoder_seed, tf.tile([self.max_decoder_length], [self.batch_size]), 1.
       )
-      dense = Dense(self.num_types, name='dense')
       generative_decoder = tf.contrib.seq2seq.BasicDecoder(
-        decoder_cell, greedy_helper, initial_state, output_layer=dense
+        decoder_cell, generative_helper, initial_state
       )
-      # Run decoders
+      # Note that using the functional dense is probably easier, but the
+      # instantiated version allows to embed it within decoders if needed.
+      dense = Dense(self.num_types, name='dense')
       logits = tf.contrib.seq2seq.dynamic_decode(decoder)
       logits = dense.apply(logits[0].rnn_output)
       scope.reuse_variables()

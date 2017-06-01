@@ -29,7 +29,7 @@ tf.app.flags.DEFINE_integer('rnn_layers', 1, "Number of RNN layers.")
 tf.app.flags.DEFINE_boolean('bidirectional_encoder', True, "Whether to use a"
                             " bidirectional RNN in the encoder.")
 tf.app.flags.DEFINE_float('max_grad_norm', 5., "Clip gradients to this norm.")
-tf.app.flags.DEFINE_boolean('use_lstm', True, "Set to False to use GRU cells.")
+tf.app.flags.DEFINE_boolean('use_lstm', False, "Set to False to use GRUs.")
 tf.app.flags.DEFINE_boolean('use_luong_attention', True, "Set to False to use"
                             " Bahdanau (additive) attention.")
 tf.app.flags.DEFINE_float('initial_p_sample', 0., "Initial probability to."
@@ -160,7 +160,10 @@ def train():
         average_stop = new_average
       
       if step % FLAGS.num_steps_per_save == 0:
+        print("==============================================================")
+        print("Saving model...")
         m.save()
+        print("Model saved. Resuming training...")
 
 
 def decode():
