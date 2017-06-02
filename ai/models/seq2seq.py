@@ -136,16 +136,16 @@ class Seq2Seq(BaseModel):
       generative_decoder = tf.contrib.seq2seq.BasicDecoder(
         decoder_cell, generative_helper, initial_state
       )
-      # Note that using the functional dense is probably easier, but the
-      # instantiated version allows to embed it within decoders if needed.
+      # No need to scope by using a layer instance. This can also be used in
+      # decoder helpers that direcly output logits or their argmax.
       dense = Dense(self.num_types, name='dense')
-      logits = tf.contrib.seq2seq.dynamic_decode(decoder)
-      logits = dense.apply(logits[0].rnn_output)
+      decoder_output = tf.contrib.seq2seq.dynamic_decode(decoder)
+      logits = dense.apply(decoder_output[0].rnn_output)
       scope.reuse_variables()
-      generative_logits = tf.contrib.seq2seq.dynamic_decode(
+      generative_output = tf.contrib.seq2seq.dynamic_decode(
         generative_decoder, maximum_iterations=self.max_decoder_length
       )
-      generative_logits = generative_logits[0].rnn_output
+      generative_logits = dense.apply(generative_output[0].rnn_output)
     
     # Index outputs (greedy)
     self.output = tf.argmax(logits, axis=2, name='output')
