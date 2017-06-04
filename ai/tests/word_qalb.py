@@ -4,6 +4,8 @@ from __future__ import division, print_function
 
 from collections import deque
 
+import os
+
 import numpy as np
 import tensorflow as tf
 
@@ -63,11 +65,6 @@ def train():
   print("Building computational graph...")
   graph = tf.Graph()
   with graph.as_default():
-    # TODO: move this to the model
-    if FLAGS.use_lstm:
-      RNN_CELL = tf.contrib.rnn.LSTMBlockCell 
-    else:
-      RNN_CELL = tf.contrib.rnn.GRUBlockCell
     m = Seq2Seq(num_types=dataset.num_types(),
                 max_encoder_length=FLAGS.max_sentence_length,
                 max_decoder_length=FLAGS.max_sentence_length,
@@ -78,7 +75,7 @@ def train():
                 batch_size=FLAGS.batch_size, embedding_size=FLAGS.embedding_size,
                 rnn_layers=FLAGS.rnn_layers,
                 bidirectional_encoder=FLAGS.bidirectional_encoder,
-                max_grad_norm=FLAGS.max_grad_norm, rnn_cell=RNN_CELL,
+                max_grad_norm=FLAGS.max_grad_norm, use_lstm=FLAGS.use_lstm,
                 use_luong_attention=FLAGS.use_luong_attention,
                 initial_p_sample=FLAGS.initial_p_sample,
                 restore=FLAGS.restore, model_name=FLAGS.model_name)
@@ -178,10 +175,6 @@ def decode():
   print("Building computational graph...")
   graph = tf.Graph()
   with graph.as_default():
-    if FLAGS.use_lstm:
-      RNN_CELL = tf.contrib.rnn.LSTMBlockCell 
-    else:
-      RNN_CELL = tf.contrib.rnn.GRUBlockCell
     m = Seq2Seq(num_types=dataset.num_types(),
                 max_encoder_length=None,
                 max_decoder_length=FLAGS.max_sentence_length,
@@ -191,7 +184,7 @@ def decode():
                 batch_size=1, embedding_size=FLAGS.embedding_size,
                 rnn_layers=FLAGS.rnn_layers,
                 bidirectional_encoder=FLAGS.bidirectional_encoder,
-                rnn_cell=RNN_CELL,
+                use_lstm=FLAGS.use_lstm,
                 use_luong_attention=FLAGS.use_luong_attention,
                 restore=True, model_name=FLAGS.model_name)
   
@@ -202,10 +195,11 @@ def decode():
     
     with open(FLAGS.decode) as f:
       lines = f.readlines()
-    for line in lines:
-      ids = [dataset.tokenize(line.split()[1:])]
-      decoded = sess.run(m.generative_output, feed_dict={m.inputs: ids})
-      print(dataset.untokenize(decoded[0]))
+    with open(os.path.join('output', 'decoder.out'), 'w') as output_file:
+      for line in lines:
+        ids = [dataset.tokenize(line.split()[1:])]
+        decoded = sess.run(m.generative_output, feed_dict={m.inputs: ids})
+        output_file.write(dataset.untokenize(decoded[0]) + '\n')
 
 def main(_):
   if FLAGS.decode:

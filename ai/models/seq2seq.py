@@ -20,7 +20,7 @@ class Seq2Seq(BaseModel):
   def __init__(self, num_types=0, max_encoder_length=99, max_decoder_length=99,
                pad_id=0, eos_id=1, go_id=2, lr=1., lr_decay=1., batch_size=32,
                embedding_size=128,  rnn_layers=2, bidirectional_encoder=True,
-               max_grad_norm=5, rnn_cell=None, use_luong_attention=True,
+               max_grad_norm=5, use_lstm=False, use_luong_attention=True,
                initial_p_sample=0., **kw):
     """TODO: add documentation for all arguments."""
     self.num_types = num_types
@@ -36,7 +36,7 @@ class Seq2Seq(BaseModel):
     self.rnn_layers = rnn_layers
     self.bidirectional_encoder = True
     self.max_grad_norm = max_grad_norm
-    self.rnn_cell = rnn_cell
+    self.use_lstm = use_lstm
     self.use_luong_attention = use_luong_attention
     self.initial_p_sample = initial_p_sample
     super(Seq2Seq, self).__init__(**kw)
@@ -63,7 +63,13 @@ class Seq2Seq(BaseModel):
     self._p_sample = tf.Variable(
       self.initial_p_sample, trainable=False, name='p_sample'
     )
-        
+    
+    input_lengths = self.get_sequence_length(self.inputs)
+    if self.use_lstm:
+      rnn_cell = tf.contrib.rnn.LSTMBlockCell 
+    else:
+      rnn_cell = tf.contrib.rnn.GRUBlockCell
+    
     with tf.variable_scope('embeddings'):
       sqrt3 = 3 ** .5  # Uniform(-sqrt3, sqrt3) has variance 1
       self.embedding_kernel = tf.get_variable(
@@ -75,13 +81,12 @@ class Seq2Seq(BaseModel):
       decoder_seed = self.get_embeddings(decoder_seed_ids)
     
     with tf.variable_scope('encoder_rnn'):
-      input_lengths = self.get_sequence_length(self.inputs)
       if self.bidirectional_encoder:
         encoder_cell_fw = tf.contrib.rnn.MultiRNNCell(
-          [self.rnn_cell(self.embedding_size) for _ in xrange(self.rnn_layers)]
+          [rnn_cell(self.embedding_size) for _ in xrange(self.rnn_layers)]
         )
         encoder_cell_bw = tf.contrib.rnn.MultiRNNCell(
-          [self.rnn_cell(self.embedding_size) for _ in xrange(self.rnn_layers)]
+          [rnn_cell(self.embedding_size) for _ in xrange(self.rnn_layers)]
         )
         (encoder_fw_out, encoder_bw_out), _ = tf.nn.bidirectional_dynamic_rnn(
           encoder_cell_fw, encoder_cell_bw, encoder_input, dtype=tf.float32,
@@ -90,7 +95,7 @@ class Seq2Seq(BaseModel):
         encoder_output = tf.concat([encoder_fw_out, encoder_bw_out], 2)
       else:
         encoder_cell = tf.contrib.rnn.MultiRNNCell(
-          [self.rnn_cell(self.embedding_size) for _ in xrange(self.rnn_layers)]
+          [rnn_cell(self.embedding_size) for _ in xrange(self.rnn_layers)]
         )
         encoder_output, _ = tf.nn.dynamic_rnn(
           encoder_cell, encoder_input, dtype=tf.float32,
@@ -100,7 +105,7 @@ class Seq2Seq(BaseModel):
     with tf.variable_scope('decoder_rnn') as scope:
       # The first RNN is wrapped with the attention mechanism
       # TODO: add option to allow normalizing the energy term
-      decoder_cell = self.rnn_cell(self.embedding_size)
+      decoder_cell = rnn_cell(self.embedding_size)
       if self.use_luong_attention:
         attention_mechanism = tf.contrib.seq2seq.LuongAttention(
           self.embedding_size, encoder_output,
@@ -117,7 +122,7 @@ class Seq2Seq(BaseModel):
       # Stack all the cells if more than one RNN is used
       if self.rnn_layers > 1:
         decoder_cell = tf.contrib.rnn.MultiRNNCell(
-          [decoder_cell] + [self.rnn_cell(self.embedding_size)
+          [decoder_cell] + [rnn_cell(self.embedding_size)
                             for _ in xrange(self.rnn_layers - 1)]
         )
       initial_state = decoder_cell.zero_state(self.batch_size, tf.float32)
@@ -183,6 +188,7 @@ class Seq2Seq(BaseModel):
   def get_sequence_length(self, sequence_batch):
     """Given a 2D batch of input sequences, return a vector with the lengths
        of every sequence excluding the paddings."""
-    return tf.reduce_sum(
-      tf.sign(tf.abs(sequence_batch - self.pad_id)), reduction_indices=1
-    )
+    with tf.name_scope('get_sequence_length'):
+      return tf.reduce_sum(
+        tf.sign(tf.abs(sequence_batch - self.pad_id)), reduction_indices=1
+      )
