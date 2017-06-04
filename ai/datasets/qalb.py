@@ -49,17 +49,22 @@ class BaseQALB(BaseDataset):
      different tokenizations (word-based, character-based, etc)."""
   __metaclass__ = ABCMeta
   
-  def __init__(self, file_root, extension='.sbw', **kw):
+  def __init__(self, file_root, max_input_length=None, max_label_length=None,
+               extension='.sbw', **kw):
     """Arguments:
        `file_root`: the root name of the files in the data/qalb directory.
         The constructor searches for .*.sent, .*.m2, where * is train and dev.
        Keyword arguments:
+       `max_input_length`: maximum sequence length for the inputs,
+       `max_label_length`: maximum sequence length for the labels,
        `extension`: name of the data file extensions (or none if it's falsy).
        Note on usage: to account for the _GO and _EOS tokens that the labels
        have inserted, if the maximum length sequences are in the labels, use
        two extra time steps if the goal is to not truncate anything."""
     super(BaseQALB, self).__init__(**kw)
     self.file_root = file_root
+    self.max_input_length = max_input_length
+    self.max_label_length = max_label_length
     if not extension:
       extension = ''
     self.extension = extension
@@ -114,38 +119,6 @@ class BaseQALB(BaseDataset):
     label_ids.append(self.type_to_ix['_EOS'])
     return input_ids, label_ids
   
-  @abstractmethod
-  def get_batch(self):
-    """Return a batch of examples according to the `batch_size` attribute.
-       This method must be overriden because the seq2seq task could use batches
-       from buckets or dynamically pad the batches based on what was drawn."""
-    pass
-  
-  # TODO: make two different methods for pair making in parent class to avoid
-  # child method with different arguments. One method to make the pairs from
-  # respective train and validation files, and one to make the pairs from a
-  # single file and allowing to specify the ratio of data used for training.
-  # pylint: disable=signature-differs
-  @abstractmethod
-  def make_pairs(self, input_lines, label_lines):
-    """Given the raw input and label text lines, process and save the pairs
-       into attributes. This method must be overriden because it is unclear
-       whether to call the `make_pair` method with words or characters."""
-    pass
-
-
-class DynamicQALB(BaseQALB):
-  """Non-bucket based data parser for QALB dataset."""
-  
-  def __init__(self, file_root, max_input_length=None, max_label_length=None,
-               **kw):
-    """Extra keyword arguments:
-       `max_input_length`: maximum sequence length for the inputs,
-       `max_label_length`: maximum sequence length for the labels."""
-    super(DynamicQALB, self).__init__(file_root, **kw)
-    self.max_input_length = max_input_length
-    self.max_label_length = max_label_length
-  
   def get_batch(self, draw_from_valid=False):
     """Draw random examples and pad them to the largest sequence drawn.
        The batch can be drawn from the validation set if the keyowrd argument
@@ -173,55 +146,18 @@ class DynamicQALB(BaseQALB):
       while len(batch[i][1]) < max_label_length:
         batch[i][1].append(self.type_to_ix['_PAD'])
     return zip(*batch)  # return as (batch_of_inputs, batch_of_labels)
-
-
-class BucketQALB(BaseQALB):
-  """Bucket-based data parser for QALB dataset."""
   
-  def __init__(self, file_root, buckets=None, **kw):
-    """TODO: add documentation for buckets"""
-    super(BucketQALB, self).__init__(file_root, **kw)
-    self.buckets = buckets
-    self.pad_and_bucket_pairs()
-  
-  def pad_and_bucket_pairs(self):
-    """Adds padding to the inputs and labels, depending on the initialized
-       buckets. Note this method requires the `train_pairs` and `valid_pairs`
-       attributes to be fully built by the `make_pairs` method, and that they
-       will be changed to the form (bucket_1, ..., bucket_k)."""
-    if not self.buckets:
-      # Get the max lengths of the input and label sequences (quick one-liners)
-      # pylint: disable=deprecated-lambda
-      max_train = max_length_seq(self.train_pairs)
-      max_valid = max_length_seq(self.valid_pairs)
-      # Build single bucket with the max of each so everything can be fed
-      self.buckets = [map(max, zip(max_train, max_valid))]
-    # Actually do the padding
-    temp_train_pairs = [[] for _ in self.buckets]
-    temp_valid_pairs = [[] for _ in self.buckets]
-    for i, pair_set in enumerate([self.train_pairs, self.valid_pairs]):
-      for input_seq, label_seq in pair_set:
-        for b_id, (max_i, max_l) in enumerate(self.buckets):
-          if len(input_seq) <= max_i and len(label_seq) <= max_l:
-            while len(input_seq) < max_i:
-              input_seq.append(self.type_to_ix['_PAD'])
-            while len(label_seq) < max_l:
-              label_seq.append(self.type_to_ix['_PAD'])
-            if i == 0:
-              temp_train_pairs[b_id].append([input_seq, label_seq])
-            else:
-              temp_valid_pairs[b_id].append([input_seq, label_seq])
-            break
-    self.train_pairs = temp_train_pairs
-    self.valid_pairs = temp_valid_pairs
-  
-  def get_batch(self):
-    """Pick a bucket randomly and make a batch of random examples from it."""
-    # TODO: make this precisely match the distribution of the bucket contents
-    bucket_id = np.random.randint(len(self.buckets))
-    pairs = self.train_pairs[bucket_id]
-    return [pairs[np.random.randint(len(pairs))]
-            for _ in xrange(self.batch_size)]
+  # TODO: make two different methods for pair making in parent class to avoid
+  # child method with different arguments. One method to make the pairs from
+  # respective train and validation files, and one to make the pairs from a
+  # single file and allowing to specify the ratio of data used for training.
+  # pylint: disable=signature-differs
+  @abstractmethod
+  def make_pairs(self, input_lines, label_lines):
+    """Given the raw input and label text lines, process and save the pairs
+       into attributes. This method must be overriden because it is unclear
+       whether to call the `make_pair` method with words or characters."""
+    pass
 
 
 class CharQALB(BaseQALB):
