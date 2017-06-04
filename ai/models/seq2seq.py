@@ -1,7 +1,5 @@
 """TODO: add descriptive docstring."""
 
-from __future__ import division
-
 from six.moves import xrange
 import tensorflow as tf
 # pylint: disable=no-name-in-module
@@ -58,7 +56,6 @@ class Seq2Seq(BaseModel):
     decoder_seed_ids = tf.tile(
       [[self.go_id]], [self.batch_size, self.max_decoder_length]
     )
-    input_lengths = self.get_sequence_length(self.inputs)
     
     with tf.variable_scope('embeddings'):
       sqrt3 = 3 ** .5  # Uniform(-sqrt3, sqrt3) has variance 1
@@ -71,30 +68,32 @@ class Seq2Seq(BaseModel):
       decoder_seed = self.get_embeddings(decoder_seed_ids)
     
     with tf.variable_scope('encoder_rnn'):
+      input_lengths = self.get_sequence_length(self.inputs)
       if self.bidirectional_encoder:
-        encoder_cell_fw = tf.contrib.rnn.MultiRNNCell(
-          [self.rnn_cell() for _ in xrange(self.rnn_layers)]
-        )
-        encoder_cell_bw = tf.contrib.rnn.MultiRNNCell(
-          [self.rnn_cell() for _ in xrange(self.rnn_layers)]
-        )
         (encoder_fw_out, encoder_bw_out), _ = tf.nn.bidirectional_dynamic_rnn(
-          encoder_cell_fw, encoder_cell_bw, encoder_input, dtype=tf.float32,
+          self.rnn_cell(), self.rnn_cell(), encoder_input, dtype=tf.float32,
           sequence_length=input_lengths
         )
-        encoder_output = tf.concat([encoder_fw_out, encoder_bw_out], 2)
+        encoder_output = tf.layers.dense(
+          tf.concat([encoder_fw_out, encoder_bw_out], 2), self.embedding_size,
+          name='output_proj'
+        )
       else:
-        encoder_cell = tf.contrib.rnn.MultiRNNCell(
-          [self.rnn_cell() for _ in xrange(self.rnn_layers)]
+        encoder_output, _ = tf.nn.dynamic_rnn(
+          self.rnn_cell(), encoder_input, dtype=tf.float32,
+          sequence_length=input_lengths
+        )
+      if self.rnn_layers > 1:
+        encoder_cells = tf.contrib.rnn.MultiRNNCell(
+          [self.rnn_cell() for _ in xrange(self.rnn_layers - 1)]
         )
         encoder_output, _ = tf.nn.dynamic_rnn(
-          encoder_cell, encoder_input, dtype=tf.float32,
+          encoder_cells, encoder_output, dtype=tf.float32,
           sequence_length=input_lengths
         )
     
     with tf.variable_scope('decoder_rnn') as scope:
       # The first RNN is wrapped with the attention mechanism
-      decoder_cell = self.rnn_cell()
       if self.use_luong_attention:
         attention_mechanism = tf.contrib.seq2seq.LuongAttention(
           self.embedding_size, encoder_output,
@@ -105,9 +104,7 @@ class Seq2Seq(BaseModel):
           self.embedding_size, encoder_output,
           memory_sequence_length=input_lengths
         )
-      decoder_cell = tf.contrib.seq2seq.DynamicAttentionWrapper(
-        decoder_cell, attention_mechanism, self.embedding_size
-      )
+      decoder_cell = self.rnn_cell(attention_mechanism=attention_mechanism)
       # Stack all the cells if more than one RNN is used
       if self.rnn_layers > 1:
         decoder_cell = tf.contrib.rnn.MultiRNNCell(
@@ -168,13 +165,17 @@ class Seq2Seq(BaseModel):
     """Performs embedding lookup. Useful as a method for decoder helpers."""
     return tf.nn.embedding_lookup(self.embedding_kernel, ids)
   
-  def rnn_cell(self):
+  def rnn_cell(self, attention_mechanism=None):
     """Get a new RNN cell with wrappers according to the initial config."""
     cell = None
     if self.use_lstm:
       cell = tf.contrib.rnn.LSTMBlockCell(self.embedding_size)
     else:
       cell = tf.contrib.rnn.GRUBlockCell(self.embedding_size)
+    if attention_mechanism is not None:
+      cell = tf.contrib.seq2seq.DynamicAttentionWrapper(
+        cell, attention_mechanism, self.embedding_size
+      )
     if self.use_residual:
       cell = tf.contrib.rnn.ResidualWrapper(cell)
     return cell

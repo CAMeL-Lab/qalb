@@ -20,7 +20,7 @@ tf.app.flags.DEFINE_integer('max_sentence_length', 50, "Max. word length of"
                             " training examples (both inputs and labels).")
 tf.app.flags.DEFINE_integer('rnn_layers', 1, "Number of RNN layers.")
 tf.app.flags.DEFINE_boolean('bidirectional_encoder', True, "Whether to use a"
-                            " bidirectional RNN in the encoder.")
+                            " bidirectional RNN in the encoder's 1st layer.")
 tf.app.flags.DEFINE_float('max_grad_norm', 5., "Clip gradients to this norm.")
 tf.app.flags.DEFINE_boolean('use_lstm', False, "Set to False to use GRUs.")
 tf.app.flags.DEFINE_boolean('use_residual', False, "Set to True to add the RNN"
