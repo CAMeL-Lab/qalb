@@ -50,3 +50,33 @@ The `lint.sh` file has a script to run pylint over all the project's files. To r
 	
 	chmod u+rxw lint.sh
 
+Tensorboard can similarly be launched with `bash ./tensorboard.sh` or with `./tensorboard.sh` by giving the file the same execution permissions.
+
+## Useful UNIX commands
+
+To remove the document id's from the `*.sent*` files, simply use
+	
+	cut -d' ' -f2- ai/datasets/data/qalb/FILENAME
+
+This can be piped to give a word count:
+	
+	# *.sent* file
+	cut -d' ' -f2- ai/datasets/data/qalb/QALB.train.sent.sbw | awk '{print NF}'
+	# *.gold* file
+	cat ai/datasets/data/qalb/QALB.train.gold.sbw | awk '{print NF}'
+
+Or a character count:
+	
+	cat ai/datasets/data/qalb/QALB.train.gold.sbw | awk '{ print length($0); }'
+
+The total number of usable characters doesn't include newlines, so as an example, the number of characters in a `*.sent*` file can be obtained automatically with
+
+	cut -d' ' -f2- ai/datasets/data/qalb/QALB.train.sent.sbw | awk '{ print length($0); }' | awk '{s+=$1} END {print s}'
+
+Which coincides with doing `cut -d' ' -f2- ai/datasets/data/qalb/QALB.train.sent.sbw | wc` and subtracting the number of lines to the number of characters.
+
+To obtain a histogram of the character counts, simply pipe `sort` and `uniq`. For instance,
+	# Characters
+	cat ai/datasets/data/qalb/QALB.train.gold.sbw | awk '{ print length($0); }' | sort -n | uniq -c
+	# Words
+	cat ai/datasets/data/qalb/QALB.train.gold.sbw | awk '{print NF}' | sort -n | uniq -c
