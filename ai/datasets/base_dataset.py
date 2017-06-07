@@ -59,6 +59,10 @@ class BaseDataset(object):
   
   def untokenize(self, tokens, join_str=' ', include_special=True):
     """Converts the argument list of integer ids back to a string."""
+    try:
+      tokens = tokens[:1+list(tokens).index(self.type_to_ix['_EOS'])]
+    except ValueError:
+      pass
     return join_str.join([self.ix_to_type[t][0] for t in tokens
                           if include_special or t > 3])
   

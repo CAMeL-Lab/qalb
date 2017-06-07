@@ -3,8 +3,6 @@
    corrections from native speakers and the L2 dataset of corrections from
    mistakes made by students of Arabic as a foreign language."""
 
-from __future__ import print_function
-
 from abc import ABCMeta, abstractmethod
 import os
 
@@ -78,6 +76,7 @@ class BaseQALB(BaseDataset):
     )
     with open(train_input_path) as train_file:
       self.train_pairs = self.make_pairs(train_file.readlines(), train_labels)
+    self.max_train_lengths = max_length_seq(self.train_pairs)
     # Prepare validation data
     valid_input_path = os.path.join(
       data_dir, self.file_root + '.dev.sent' + self.extension
@@ -87,6 +86,7 @@ class BaseQALB(BaseDataset):
     )
     with open(valid_input_path) as valid_file:
       self.valid_pairs = self.make_pairs(valid_file.readlines(), valid_labels)
+    self.max_valid_lengths = max_length_seq(self.valid_pairs)
   
   def flatten_gold(self, file_root):
     """Create and return the contents a provided filename that generates a
