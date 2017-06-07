@@ -26,6 +26,7 @@ tf.app.flags.DEFINE_boolean('add_fw_bw', True, "Set to False to concatenate"
 tf.app.flags.DEFINE_boolean('pyramid_encoder', False, "Set to True to use an"
                             " encoder that halves the time steps per layer.")
 tf.app.flags.DEFINE_float('max_grad_norm', 5., "Clip gradients to this norm.")
+tf.app.flags.DEFINE_float('epsilon', 1e-8, "Denominator constant for Adam.")
 tf.app.flags.DEFINE_boolean('use_lstm', False, "Set to False to use GRUs.")
 tf.app.flags.DEFINE_boolean('use_residual', False, "Set to True to add the RNN"
                             " inputs to the outputs.")
@@ -72,8 +73,8 @@ def train():
                 bidirectional_encoder=FLAGS.bidirectional_encoder,
                 add_fw_bw=FLAGS.add_fw_bw,
                 pyramid_encoder=FLAGS.pyramid_encoder,
-                max_grad_norm=FLAGS.max_grad_norm, use_lstm=FLAGS.use_lstm,
-                use_residual=FLAGS.use_residual,
+                max_grad_norm=FLAGS.max_grad_norm, epsilon=FLAGS.epsilon,
+                use_lstm=FLAGS.use_lstm, use_residual=FLAGS.use_residual,
                 use_luong_attention=FLAGS.use_luong_attention, beam_size=1,
                 p_sample=FLAGS.p_sample, restore=FLAGS.restore,
                 model_name=FLAGS.model_name)

@@ -19,9 +19,9 @@ class Seq2Seq(BaseModel):
   def __init__(self, num_types=0, max_encoder_length=99, max_decoder_length=99,
                pad_id=0, eos_id=1, go_id=2, batch_size=32, embedding_size=128,
                rnn_layers=2, bidirectional_encoder=True, add_fw_bw=True,
-               pyramid_encoder=False, max_grad_norm=5., use_lstm=False,
-               use_residual=False, use_luong_attention=True, beam_size=1,
-               p_sample=0, **kw):
+               pyramid_encoder=False, max_grad_norm=5., epsilon=1e-8,
+               use_lstm=False, use_residual=False, use_luong_attention=True,
+               beam_size=1, p_sample=0, **kw):
     """TODO: add documentation for all arguments."""
     self.num_types = num_types
     self.max_encoder_length = max_encoder_length
@@ -36,6 +36,7 @@ class Seq2Seq(BaseModel):
     self.add_fw_bw = add_fw_bw
     self.pyramid_encoder = pyramid_encoder
     self.max_grad_norm = max_grad_norm
+    self.epsilon = epsilon
     self.use_lstm = use_lstm
     self.use_residual = use_residual
     self.use_luong_attention = use_luong_attention
@@ -93,7 +94,7 @@ class Seq2Seq(BaseModel):
       grads, _ = tf.clip_by_global_norm(
         tf.gradients(loss, tvars), self.max_grad_norm
       )
-      self.optimizer = tf.train.AdamOptimizer(self.lr)
+      self.optimizer = tf.train.AdamOptimizer(self.lr, epsilon=self.epsilon)
       self.train_op = self.optimizer.apply_gradients(
         zip(grads, tvars), global_step=self.global_step
       )
