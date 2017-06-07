@@ -152,24 +152,25 @@ class Seq2Seq(BaseModel):
     decoder_cell = self.rnn_cell(attention_mechanism=attention_mechanism(
       self.embedding_size, encoder_output
     ))
+    # Use last state of encoder to avoid wrong first outputs
+    initial_state_pass = tf.split(tf.layers.dense(
+      encoder_output[:, 0], self.embedding_size * self.rnn_layers,
+      activation=tf.tanh, name='initial_decoder_state'
+    ), self.rnn_layers, axis=1)
+    beam_batch_size = self.batch_size * self.beam_size
+    initial_state = tf.contrib.seq2seq.AttentionWrapperState(
+      cell_state=initial_state_pass[0],
+      attention=tf.zeros([beam_batch_size, self.embedding_size]),
+      alignments=tf.zeros([beam_batch_size, self.max_decoder_length]),
+      time=tf.zeros(()), alignment_history=()
+    )
     # Stack all the cells if more than one RNN is used
     if self.rnn_layers > 1:
       decoder_cell = tf.contrib.rnn.MultiRNNCell(
         [decoder_cell] + [self.rnn_cell()
                           for _ in xrange(self.rnn_layers - 1)]
       )
-    # Use last state of encoder to avoid wrong first outputs
-    initial_state = tf.layers.dense(
-      encoder_output[:, 0], self.embedding_size, activation=tf.tanh,
-      name='initial_decoder_state'
-    )
-    beam_batch_size = self.batch_size * self.beam_size
-    initial_state = tf.contrib.seq2seq.AttentionWrapperState(
-      cell_state=initial_state,
-      attention=tf.zeros([beam_batch_size, self.embedding_size]),
-      alignments=tf.zeros([beam_batch_size, self.max_decoder_length]),
-      time=tf.zeros(()), alignment_history=()
-    )
+      initial_state = tuple([initial_state] + list(initial_state_pass[1:]))
     # Training decoder
     sampling_helper = tf.contrib.seq2seq.ScheduledOutputTrainingHelper(
       tf.contrib.seq2seq.tile_batch(decoder_input, self.beam_size),
