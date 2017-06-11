@@ -35,6 +35,8 @@ tf.app.flags.DEFINE_boolean('use_luong_attention', True, "Set to False to use"
 tf.app.flags.DEFINE_integer('beam_size', 64, "Beam search size.")
 tf.app.flags.DEFINE_boolean('feed_inputs_to_decoder', False, "Use the inputs"
                             " instead of the labels as decoder inputs.")
+tf.app.flags.DEFINE_integer('switch_to_sgd', None, "Set to a number of steps"
+                            " to pass for the optimizer to switch to SGD.")
 tf.app.flags.DEFINE_float('p_sample', 0., "Initial probability to."
                           "sample from the decoder's own predictions.")
 tf.app.flags.DEFINE_float('p_sample_decay', 0., "How much to change the"
@@ -87,6 +89,11 @@ def train():
     m.start()
     print("Entering training loop...")
     while True:
+      step = m.global_step.eval()
+      
+      # Check the switch to SGD
+      if FLAGS.switch_to_sgd and step > FLAGS.switch_to_sgd:
+        m.optimizer = tf.train.GradientDescentOptimizer(.5)
       
       # Gradient descent and backprop
       train_inputs, train_labels = dataset.get_batch()
@@ -99,7 +106,6 @@ def train():
       )
       sess.run(tf.assign(m.p_sample, new_p_sample))
       
-      step = m.global_step.eval()
       if step % FLAGS.num_steps_per_eval == 0:
         
         # Show learning rate and sample outputs from training set
