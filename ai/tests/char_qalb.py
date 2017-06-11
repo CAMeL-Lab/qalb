@@ -18,7 +18,7 @@ tf.app.flags.DEFINE_integer('batch_size', 20, "Batch size.")
 tf.app.flags.DEFINE_integer('embedding_size', 256, "Number of hidden units.")
 tf.app.flags.DEFINE_integer('max_sentence_length', 400, "Max. word length of"
                             " training examples (both inputs and labels).")
-tf.app.flags.DEFINE_integer('rnn_layers', 1, "Number of RNN layers.")
+tf.app.flags.DEFINE_integer('rnn_layers', 2, "Number of RNN layers.")
 tf.app.flags.DEFINE_boolean('bidirectional_encoder', True, "Whether to use a"
                             " bidirectional RNN in the encoder's 1st layer.")
 tf.app.flags.DEFINE_boolean('add_fw_bw', True, "Set to False to concatenate"
