@@ -58,7 +58,7 @@ class Seq2Seq(BaseModel):
     )
     
     with tf.name_scope('decoder_inputs'):
-      if feed_inputs_to_decoder:
+      if self.feed_inputs_to_decoder:
         decoder_ids = tf.concat(
           [tf.tile([[self.go_id]], [self.batch_size, 1]), self.inputs], 1
         )
