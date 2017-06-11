@@ -162,16 +162,17 @@ class Seq2Seq(BaseModel):
         [decoder_cell] + [self.rnn_cell()
                           for _ in xrange(self.rnn_layers - 1)])
       initial_state = tuple([initial_state] + list(initial_state_pass[1:]))
+    # RNN output to prediction feedforward layer
+    dense = Dense(self.num_types, name='dense')
     # Training decoder
-    sampling_helper = tf.contrib.seq2seq.ScheduledOutputTrainingHelper(
+    sampling_helper = tf.contrib.seq2seq.ScheduledEmbeddingTrainingHelper(
       tf.contrib.seq2seq.tile_batch(decoder_input, self.beam_size),
       tf.tile([self.max_decoder_length], [beam_batch_size]),
-      self.p_sample)
+      dense, self.p_sample)
     decoder = tf.contrib.seq2seq.BasicDecoder(
       decoder_cell, sampling_helper, initial_state)
-    dense = Dense(self.num_types, name='dense')
     decoder_output = tf.contrib.seq2seq.dynamic_decode(decoder)
-    logits = dense.apply(decoder_output[0].rnn_output)
+    logits = decoder_output[0].rnn_output
     # TODO: allow custom length penalty weight
     generative_decoder = tf.contrib.seq2seq.BeamSearchDecoder(
       decoder_cell, self.get_embeddings,
