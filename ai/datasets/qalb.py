@@ -166,9 +166,8 @@ class CharQALB(BaseQALB):
   def make_pairs(self, input_lines, label_lines):
     pairs = []
     for i in xrange(len(input_lines)):
-      # Remove the document id (first word) and truncate to max char length
-      input_line = ' '.join(input_lines[i].split()[1:])
-      label_line = label_lines[i]
+      input_line = ' '.join(input_lines[i].split()[1:])  # remove document id
+      label_line = label_lines[i][:-1]  # remove newline
       pairs.append(self.make_pair(input_line, label_line))
     return pairs
 
@@ -179,7 +178,6 @@ class WordQALB(BaseQALB):
   def make_pairs(self, input_lines, label_lines):
     pairs = []
     for i in xrange(len(input_lines)):
-      # Compensate for document id
       input_line = input_lines[i].split()[1:]  # remove document id
       label_line = label_lines[i].split()
       pairs.append(self.make_pair(input_line, label_line))

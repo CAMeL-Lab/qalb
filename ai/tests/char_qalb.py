@@ -130,11 +130,11 @@ def train():
              )
         print("==============================================================")
         print("Sample input:")
-        print(dataset.untokenize(valid_inputs[0], join_str=''))
+        print(repr(dataset.untokenize(valid_inputs[0], join_str='')))
         print("Sample target:")
-        print(dataset.untokenize(valid_labels[0], join_str=''))
+        print(repr(dataset.untokenize(valid_labels[0], join_str='')))
         print("Sample output:")
-        print(dataset.untokenize(valid_output[0], join_str=''))
+        print(repr(dataset.untokenize(valid_output[0], join_str='')))
         sys.stdout.flush()
       
       if step % FLAGS.num_steps_per_save == 0:
