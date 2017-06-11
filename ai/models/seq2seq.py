@@ -21,7 +21,7 @@ class Seq2Seq(BaseModel):
                rnn_layers=2, bidirectional_encoder=True, add_fw_bw=True,
                pyramid_encoder=False, max_grad_norm=5., epsilon=1e-8,
                use_lstm=False, use_residual=False, use_luong_attention=True,
-               beam_size=1, p_sample=0, **kw):
+               beam_size=1, p_sample=0, feed_inputs_to_decoder=False, **kw):
     """TODO: add documentation for all arguments."""
     self.num_types = num_types
     self.max_encoder_length = max_encoder_length
@@ -41,6 +41,7 @@ class Seq2Seq(BaseModel):
     self.use_residual = use_residual
     self.use_luong_attention = use_luong_attention
     self.beam_size = beam_size
+    self.feed_inputs_to_decoder = feed_inputs_to_decoder
     self.p_sample = tf.Variable(
       p_sample, trainable=False, dtype=tf.float32, name='p_sample')
     super(Seq2Seq, self).__init__(**kw)
@@ -57,9 +58,14 @@ class Seq2Seq(BaseModel):
     )
     
     with tf.name_scope('decoder_inputs'):
-      decoder_ids = tf.concat(
-        [tf.tile([[self.go_id]], [self.batch_size, 1]), self.labels], 1
-      )
+      if feed_inputs_to_decoder:
+        decoder_ids = tf.concat(
+          [tf.tile([[self.go_id]], [self.batch_size, 1]), self.inputs], 1
+        )
+      else:
+        decoder_ids = tf.concat(
+          [tf.tile([[self.go_id]], [self.batch_size, 1]), self.labels], 1
+        )
     
     with tf.variable_scope('embeddings'):
       sqrt3 = 3 ** .5  # Uniform(-sqrt3, sqrt3) has variance 1

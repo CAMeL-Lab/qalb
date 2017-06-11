@@ -33,6 +33,8 @@ tf.app.flags.DEFINE_boolean('use_residual', False, "Set to True to add the RNN"
 tf.app.flags.DEFINE_boolean('use_luong_attention', True, "Set to False to use"
                             " Bahdanau (additive) attention.")
 tf.app.flags.DEFINE_integer('beam_size', 64, "Beam search size.")
+tf.app.flags.DEFINE_boolean('feed_inputs_to_decoder', False, "Use the inputs"
+                            " instead of the labels as decoder inputs.")
 tf.app.flags.DEFINE_float('p_sample', 0., "Initial probability to."
                           "sample from the decoder's own predictions.")
 tf.app.flags.DEFINE_float('p_sample_decay', 0., "How much to change the"
@@ -76,6 +78,7 @@ def train():
                 max_grad_norm=FLAGS.max_grad_norm, epsilon=FLAGS.epsilon,
                 use_lstm=FLAGS.use_lstm, use_residual=FLAGS.use_residual,
                 use_luong_attention=FLAGS.use_luong_attention, beam_size=1,
+                feed_inputs_to_decoder=FLAGS.feed_inputs_to_decoder,
                 p_sample=FLAGS.p_sample, restore=FLAGS.restore,
                 model_name=FLAGS.model_name)
 
