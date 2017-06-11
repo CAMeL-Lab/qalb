@@ -171,7 +171,7 @@ class Seq2Seq(BaseModel):
     decoder = tf.contrib.seq2seq.BasicDecoder(
       decoder_cell, sampling_helper, initial_state, output_layer=dense)
     decoder_output = tf.contrib.seq2seq.dynamic_decode(decoder)
-    logits = dense.apply(decoder_output[0].rnn_output)
+    logits = decoder_output[0].rnn_output
     # TODO: allow custom length penalty weight
     generative_decoder = tf.contrib.seq2seq.BeamSearchDecoder(
       decoder_cell, self.get_embeddings,
