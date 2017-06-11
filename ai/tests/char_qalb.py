@@ -37,6 +37,8 @@ tf.app.flags.DEFINE_boolean('feed_inputs_to_decoder', False, "Use the inputs"
                             " instead of the labels as decoder inputs.")
 tf.app.flags.DEFINE_integer('switch_to_sgd', None, "Set to a number of steps"
                             " to pass for the optimizer to switch to SGD.")
+tf.app.flags.DEFINE_float('dropout', 1., "Keep probability for dropout on the"
+                          "RNNs' non-recurrent connections.")
 tf.app.flags.DEFINE_float('p_sample', 0., "Initial probability to."
                           "sample from the decoder's own predictions.")
 tf.app.flags.DEFINE_float('p_sample_decay', 0., "How much to change the"
@@ -81,8 +83,8 @@ def train():
                 use_lstm=FLAGS.use_lstm, use_residual=FLAGS.use_residual,
                 use_luong_attention=FLAGS.use_luong_attention, beam_size=1,
                 feed_inputs_to_decoder=FLAGS.feed_inputs_to_decoder,
-                p_sample=FLAGS.p_sample, restore=FLAGS.restore,
-                model_name=FLAGS.model_name)
+                dropout=FLAGS.dropout, p_sample=FLAGS.p_sample,
+                restore=FLAGS.restore, model_name=FLAGS.model_name)
 
   with tf.Session(graph=graph) as sess:
     print("Initializing or restoring model...")

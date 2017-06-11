@@ -21,7 +21,8 @@ class Seq2Seq(BaseModel):
                rnn_layers=2, bidirectional_encoder=True, add_fw_bw=True,
                pyramid_encoder=False, max_grad_norm=5., epsilon=1e-8,
                use_lstm=False, use_residual=False, use_luong_attention=True,
-               beam_size=1, p_sample=0, feed_inputs_to_decoder=False, **kw):
+               beam_size=1, feed_inputs_to_decoder=False, dropout=1.,
+               p_sample=0, **kw):
     """TODO: add documentation for all arguments."""
     self.num_types = num_types
     self.max_encoder_length = max_encoder_length
@@ -42,6 +43,7 @@ class Seq2Seq(BaseModel):
     self.use_luong_attention = use_luong_attention
     self.beam_size = beam_size
     self.feed_inputs_to_decoder = feed_inputs_to_decoder
+    self.dropout = dropout
     self.p_sample = tf.Variable(
       p_sample, trainable=False, dtype=tf.float32, name='p_sample')
     super(Seq2Seq, self).__init__(**kw)
@@ -50,29 +52,24 @@ class Seq2Seq(BaseModel):
   def build_graph(self):
     self.inputs = tf.placeholder(
       tf.int32, name='inputs',
-      shape=[self.batch_size, self.max_encoder_length]
-    )
+      shape=[self.batch_size, self.max_encoder_length])
     self.labels = tf.placeholder(
       tf.int32, name='labels',
-      shape=[self.batch_size, self.max_decoder_length]
-    )
+      shape=[self.batch_size, self.max_decoder_length])
     
     with tf.name_scope('decoder_inputs'):
       if self.feed_inputs_to_decoder:
         decoder_ids = tf.concat(
-          [tf.tile([[self.go_id]], [self.batch_size, 1]), self.inputs], 1
-        )
+          [tf.tile([[self.go_id]], [self.batch_size, 1]), self.inputs], 1)
       else:
         decoder_ids = tf.concat(
-          [tf.tile([[self.go_id]], [self.batch_size, 1]), self.labels], 1
-        )
+          [tf.tile([[self.go_id]], [self.batch_size, 1]), self.labels], 1)
     
     with tf.variable_scope('embeddings'):
       sqrt3 = 3 ** .5  # Uniform(-sqrt3, sqrt3) has variance 1
       self.embedding_kernel = tf.get_variable(
         'kernel', [self.num_types, self.embedding_size],
-        initializer=tf.random_uniform_initializer(minval=-sqrt3, maxval=sqrt3)
-      )
+        initializer=tf.random_uniform_initializer(minval=-sqrt3, maxval=sqrt3))
       encoder_input = self.get_embeddings(self.inputs)
       decoder_input = self.get_embeddings(decoder_ids)
     
@@ -81,8 +78,7 @@ class Seq2Seq(BaseModel):
     
     with tf.variable_scope('decoder'):
       logits, self.generative_output = self.build_decoder(
-        encoder_output, decoder_input
-      )
+        encoder_output, decoder_input)
     
     # Index outputs (greedy)
     self.output = tf.argmax(logits, axis=2, name='output')
@@ -98,12 +94,10 @@ class Seq2Seq(BaseModel):
     with tf.variable_scope('train_op'):
       tvars = tf.trainable_variables()
       grads, _ = tf.clip_by_global_norm(
-        tf.gradients(loss, tvars), self.max_grad_norm
-      )
+        tf.gradients(loss, tvars), self.max_grad_norm)
       self.optimizer = tf.train.AdamOptimizer(self.lr, epsilon=self.epsilon)
       self.train_op = self.optimizer.apply_gradients(
-        zip(grads, tvars), global_step=self.global_step
-      )
+        zip(grads, tvars), global_step=self.global_step)
   
   
   def build_encoder(self, encoder_input):
@@ -111,20 +105,17 @@ class Seq2Seq(BaseModel):
     if self.bidirectional_encoder:
       (encoder_fw_out, encoder_bw_out), _ = tf.nn.bidirectional_dynamic_rnn(
         self.rnn_cell(), self.rnn_cell(), encoder_input, dtype=tf.float32,
-        sequence_length=input_lengths
-      )
+        sequence_length=input_lengths)
       if self.add_fw_bw:
         encoder_output = encoder_fw_out + encoder_bw_out
       else:
         encoder_output = tf.layers.dense(
           tf.concat([encoder_fw_out, encoder_bw_out], 2), self.embedding_size,
-          activation=tf.tanh, name='bidirectional_projection'
-        )
+          activation=tf.tanh, name='bidirectional_projection')
     else:
       encoder_output, _ = tf.nn.dynamic_rnn(
         self.rnn_cell(), encoder_input, dtype=tf.float32,
-        sequence_length=input_lengths
-      )
+        sequence_length=input_lengths)
     if self.rnn_layers > 1:
       if self.pyramid_encoder:
         for i in xrange(1, self.rnn_layers):
@@ -133,20 +124,16 @@ class Seq2Seq(BaseModel):
           concat_shape = map(int, [eo_sh[0], eo_sh[1] / 2, eo_sh[2] * 2])
           encoder_output = tf.layers.dense(
             tf.reshape(encoder_output, concat_shape), self.embedding_size,
-            name='pyramid_projection_{}'.format(i)
-          )
+            name='pyramid_projection_{}'.format(i))
           encoder_output, _ = tf.nn.dynamic_rnn(
             self.rnn_cell(self.embedding_size / (2 ** i)),
-            tf.reshape(encoder_output, concat_shape), dtype=tf.float32
-          )
+            tf.reshape(encoder_output, concat_shape), dtype=tf.float32)
       else:
         encoder_cells = tf.contrib.rnn.MultiRNNCell(
-          [self.rnn_cell() for _ in xrange(self.rnn_layers - 1)]
-        )
+          [self.rnn_cell() for _ in xrange(self.rnn_layers - 1)])
         encoder_output, _ = tf.nn.dynamic_rnn(
           encoder_cells, encoder_output, dtype=tf.float32,
-          sequence_length=input_lengths
-        )
+          sequence_length=input_lengths)
     return tf.contrib.seq2seq.tile_batch(encoder_output, self.beam_size)
   
   
@@ -157,8 +144,7 @@ class Seq2Seq(BaseModel):
     else:
       attention_mechanism = tf.contrib.seq2seq.BahdanauAttention
     decoder_cell = self.rnn_cell(attention_mechanism=attention_mechanism(
-      self.embedding_size, encoder_output
-    ))
+      self.embedding_size, encoder_output))
     # Use last state of encoder to avoid wrong first outputs
     initial_state_pass = tf.split(tf.layers.dense(
       encoder_output[:, 0], self.embedding_size * self.rnn_layers,
@@ -169,24 +155,20 @@ class Seq2Seq(BaseModel):
       cell_state=initial_state_pass[0],
       attention=tf.zeros([beam_batch_size, self.embedding_size]),
       alignments=tf.zeros([beam_batch_size, self.max_decoder_length]),
-      time=tf.zeros(()), alignment_history=()
-    )
+      time=tf.zeros(()), alignment_history=())
     # Stack all the cells if more than one RNN is used
     if self.rnn_layers > 1:
       decoder_cell = tf.contrib.rnn.MultiRNNCell(
         [decoder_cell] + [self.rnn_cell()
-                          for _ in xrange(self.rnn_layers - 1)]
-      )
+                          for _ in xrange(self.rnn_layers - 1)])
       initial_state = tuple([initial_state] + list(initial_state_pass[1:]))
     # Training decoder
     sampling_helper = tf.contrib.seq2seq.ScheduledOutputTrainingHelper(
       tf.contrib.seq2seq.tile_batch(decoder_input, self.beam_size),
       tf.tile([self.max_decoder_length], [beam_batch_size]),
-      self.p_sample
-    )
+      self.p_sample)
     decoder = tf.contrib.seq2seq.BasicDecoder(
-      decoder_cell, sampling_helper, initial_state
-    )
+      decoder_cell, sampling_helper, initial_state)
     dense = Dense(self.num_types, name='dense')
     decoder_output = tf.contrib.seq2seq.dynamic_decode(decoder)
     logits = dense.apply(decoder_output[0].rnn_output)
@@ -195,12 +177,10 @@ class Seq2Seq(BaseModel):
       decoder_cell, self.get_embeddings,
       tf.tile([self.go_id], [self.batch_size]), self.eos_id,
       initial_state, self.beam_size, output_layer=dense,
-      length_penalty_weight=.6
-    )
+      length_penalty_weight=.6)
     tf.get_variable_scope().reuse_variables()
     generative_output = tf.contrib.seq2seq.dynamic_decode(
-      generative_decoder, maximum_iterations=self.max_decoder_length
-    )
+      generative_decoder, maximum_iterations=self.max_decoder_length)
     return logits, generative_output[0].beam_search_decoder_output
   
   
@@ -222,6 +202,9 @@ class Seq2Seq(BaseModel):
       cell = tf.contrib.seq2seq.AttentionWrapper(cell, attention_mechanism)
     if self.use_residual:
       cell = tf.contrib.rnn.ResidualWrapper(cell)
+    if self.dropout < 1:
+      cell = tf.contrib.rnn.DropoutWrapper(
+        cell, input_keep_prob=self.dropout, output_keep_prob=self.dropout)
     return cell
   
   
@@ -230,5 +213,4 @@ class Seq2Seq(BaseModel):
        of every sequence excluding the paddings."""
     with tf.name_scope('get_sequence_length'):
       return tf.reduce_sum(
-        tf.sign(tf.abs(sequence_batch - self.pad_id)), reduction_indices=1
-      )
+        tf.sign(tf.abs(sequence_batch - self.pad_id)), reduction_indices=1)
