@@ -12,7 +12,7 @@ from ai.models import Seq2Seq
 
 
 ### HYPERPARAMETERS
-tf.app.flags.DEFINE_float('lr', 1e-3, "Learning rate.")
+tf.app.flags.DEFINE_float('lr', 5e-4, "Learning rate.")
 tf.app.flags.DEFINE_float('lr_decay', 1., "Learning rate decay.")
 tf.app.flags.DEFINE_integer('batch_size', 20, "Batch size.")
 tf.app.flags.DEFINE_integer('embedding_size', 256, "Number of hidden units.")
@@ -33,8 +33,6 @@ tf.app.flags.DEFINE_boolean('use_residual', False, "Set to True to add the RNN"
 tf.app.flags.DEFINE_boolean('use_luong_attention', True, "Set to False to use"
                             " Bahdanau (additive) attention.")
 tf.app.flags.DEFINE_integer('beam_size', 64, "Beam search size.")
-tf.app.flags.DEFINE_boolean('feed_inputs_to_decoder', False, "Use the inputs"
-                            " instead of the labels as decoder inputs.")
 tf.app.flags.DEFINE_integer('switch_to_sgd', None, "Set to a number of steps"
                             " to pass for the optimizer to switch to SGD.")
 tf.app.flags.DEFINE_float('dropout', 1., "Keep probability for dropout on the"
@@ -82,7 +80,6 @@ def train():
                 max_grad_norm=FLAGS.max_grad_norm, epsilon=FLAGS.epsilon,
                 use_lstm=FLAGS.use_lstm, use_residual=FLAGS.use_residual,
                 use_luong_attention=FLAGS.use_luong_attention, beam_size=1,
-                feed_inputs_to_decoder=FLAGS.feed_inputs_to_decoder,
                 dropout=FLAGS.dropout, p_sample=FLAGS.p_sample,
                 restore=FLAGS.restore, model_name=FLAGS.model_name)
 
