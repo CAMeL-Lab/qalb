@@ -37,6 +37,7 @@ tf.app.flags.DEFINE_integer('switch_to_sgd', None, "Set to a number of steps"
                             " to pass for the optimizer to switch to SGD.")
 tf.app.flags.DEFINE_float('dropout', 1., "Keep probability for dropout on the"
                           "RNNs' non-recurrent connections.")
+tf.app.flags.DEFINE_integer('gram_order', 1, "Size of the n-grams.")
 tf.app.flags.DEFINE_float('p_sample', 0., "Initial probability to."
                           "sample from the decoder's own predictions.")
 tf.app.flags.DEFINE_float('p_sample_decay', 0., "How much to change the"
@@ -59,6 +60,7 @@ def train():
   """Run a loop that continuously trains the model."""
   print("Building dynamic character-level QALB data...")
   dataset = CharQALB('QALB', batch_size=FLAGS.batch_size,
+                     gram_order=FLAGS.gram_order,
                      max_input_length=FLAGS.max_sentence_length,
                      max_label_length=FLAGS.max_sentence_length)
   print("Building computational graph...")
@@ -145,7 +147,7 @@ def train():
 def decode():
   """Run a blind test on the file with path given by the `decode` flag."""
   print("Building dynamic word-level QALB data...")
-  dataset = CharQALB('QALB', batch_size=1,
+  dataset = CharQALB('QALB', batch_size=1, gram_order=FLAGS.gram_order,
                      max_input_length=FLAGS.max_sentence_length,
                      max_label_length=FLAGS.max_sentence_length)
   print("Building computational graph...")
