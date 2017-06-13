@@ -1,5 +1,7 @@
 """TODO: add descriptive docstring."""
 
+from __future__ import division
+
 from six.moves import xrange
 import tensorflow as tf
 # pylint: disable=no-name-in-module
@@ -54,6 +56,8 @@ class Seq2Seq(BaseModel):
     self.labels = tf.placeholder(
       tf.int32, name='labels',
       shape=[self.batch_size, self.max_decoder_length])
+    self.temperature = tf.placeholder_with_default(
+      1., name='temperature', shape=[])
     
     with tf.name_scope('decoder_inputs'):
       decoder_ids = tf.concat(
@@ -161,20 +165,27 @@ class Seq2Seq(BaseModel):
       tf.contrib.seq2seq.tile_batch(decoder_input, self.beam_size),
       tf.tile([self.max_decoder_length], [beam_batch_size]),
       self.get_embeddings, self.p_sample)
-    dense = Dense(self.num_types, name='dense')
+    dense = Dense(
+      self.num_types, name='dense', activation=lambda x: x / self.temperature)
     decoder = tf.contrib.seq2seq.BasicDecoder(
       decoder_cell, sampling_helper, initial_state, output_layer=dense)
     decoder_output = tf.contrib.seq2seq.dynamic_decode(decoder)
     logits = decoder_output[0].rnn_output
     # TODO: allow custom length penalty weight
-    generative_decoder = tf.contrib.seq2seq.BeamSearchDecoder(
-      decoder_cell, self.get_embeddings,
-      tf.tile([self.go_id], [self.batch_size]), self.eos_id,
-      initial_state, self.beam_size, output_layer=dense)
+    # generative_decoder = tf.contrib.seq2seq.BeamSearchDecoder(
+    #   decoder_cell, self.get_embeddings,
+    #   tf.tile([self.go_id], [self.batch_size]), self.eos_id,
+    #   initial_state, self.beam_size, output_layer=dense)
+    ### TEMPORARY
+    ghelper = tf.contrib.seq2seq.GreedyEmbeddingHelper(
+      self.get_embeddings, tf.tile([self.go_id], [self.batch_size]), self.eos_id)
+    generative_decoder = tf.contrib.seq2seq.BasicDecoder(
+      decoder_cell, ghelper, initial_state, output_layer=dense)
+    ### END TEMPORARY
     tf.get_variable_scope().reuse_variables()
     generative_output = tf.contrib.seq2seq.dynamic_decode(
       generative_decoder, maximum_iterations=self.max_decoder_length)
-    return logits, generative_output[0].beam_search_decoder_output
+    return logits, generative_output
   
   
   def get_embeddings(self, ids):

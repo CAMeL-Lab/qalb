@@ -5,6 +5,7 @@ from __future__ import division, print_function
 import os
 import sys
 
+import numpy as np
 import tensorflow as tf
 
 from ai.datasets import CharQALB
@@ -16,8 +17,6 @@ tf.app.flags.DEFINE_float('lr', 5e-4, "Learning rate.")
 tf.app.flags.DEFINE_float('lr_decay', 1., "Learning rate decay.")
 tf.app.flags.DEFINE_integer('batch_size', 20, "Batch size.")
 tf.app.flags.DEFINE_integer('embedding_size', 256, "Number of hidden units.")
-tf.app.flags.DEFINE_integer('max_sentence_length', 400, "Max. word length of"
-                            " training examples (both inputs and labels).")
 tf.app.flags.DEFINE_integer('rnn_layers', 2, "Number of RNN layers.")
 tf.app.flags.DEFINE_boolean('bidirectional_encoder', True, "Whether to use a"
                             " bidirectional RNN in the encoder's 1st layer.")
@@ -32,7 +31,7 @@ tf.app.flags.DEFINE_boolean('use_residual', False, "Set to True to add the RNN"
                             " inputs to the outputs.")
 tf.app.flags.DEFINE_boolean('use_luong_attention', True, "Set to False to use"
                             " Bahdanau (additive) attention.")
-tf.app.flags.DEFINE_integer('beam_size', 64, "Beam search size.")
+tf.app.flags.DEFINE_integer('beam_size', 1, "Beam search size.")
 tf.app.flags.DEFINE_integer('switch_to_sgd', None, "Set to a number of steps"
                             " to pass for the optimizer to switch to SGD.")
 tf.app.flags.DEFINE_float('dropout', 1., "Keep probability for dropout on the"
@@ -44,11 +43,14 @@ tf.app.flags.DEFINE_float('p_sample_decay', 0., "How much to change the"
                           "decoder sampling probability at every time step.")
 
 ### CONFIG
+tf.app.flags.DEFINE_integer('max_sentence_length', 400, "Max. word length of"
+                            " training examples (both inputs and labels).")
 tf.app.flags.DEFINE_integer('num_steps_per_eval', 10, "Number of steps to wait"
                             " before running the graph with the dev set.")
 tf.app.flags.DEFINE_integer('num_steps_per_save', 50, "Number of steps to wait"
                             " before saving the trainable variables.")
 tf.app.flags.DEFINE_string('decode', None, "Set to a path to run on a file.")
+tf.app.flags.DEFINE_string('output_path', os.path.join('output', 'result.txt'),                         "Name of the output file with decoding results.")
 tf.app.flags.DEFINE_boolean('restore', True, "Whether to restore the model.")
 tf.app.flags.DEFINE_string('model_name', None, "Name of the output directory.")
 
@@ -146,17 +148,23 @@ def train():
 
 def decode():
   """Run a blind test on the file with path given by the `decode` flag."""
+  print("Reading data...")
+  with open(FLAGS.decode) as test_file:
+    lines = test_file.readlines()
+    max_length = max(map(lambda line: len(' '.join(line.split()[1:])), lines))
+  
   print("Building dynamic word-level QALB data...")
   dataset = CharQALB('QALB', batch_size=1, gram_order=FLAGS.gram_order,
-                     max_input_length=FLAGS.max_sentence_length,
-                     max_label_length=FLAGS.max_sentence_length)
+                     max_input_length=max_length,
+                     max_label_length=max_length)
   print("Building computational graph...")
   graph = tf.Graph()
   with graph.as_default():
+    # TODO: remove constants dependent on dataset instance; save them in model.
     # pylint: disable=invalid-name
     m = Seq2Seq(num_types=dataset.num_types(),
-                max_encoder_length=FLAGS.max_sentence_length,
-                max_decoder_length=FLAGS.max_sentence_length,
+                max_encoder_length=max_length,
+                max_decoder_length=max_length,
                 pad_id=dataset.type_to_ix['_PAD'],
                 eos_id=dataset.type_to_ix['_EOS'],
                 go_id=dataset.type_to_ix['_GO'], batch_size=1,
@@ -175,18 +183,21 @@ def decode():
     m.start()
     print("Restored model (global step {})".format(m.global_step.eval()))
     
-    with open(FLAGS.decode) as test_file:
-      lines = test_file.readlines()
-    with open(os.path.join('output', 'decoder.out'), 'w') as output_file:
+    with open(FLAGS.output_path, 'w') as output_file:
       for line in lines:
-        ids = dataset.tokenize(''.join(line.split()[1:]))
-        while len(ids) < FLAGS.max_sentence_length:
+        line = ' '.join(line.split()[1:])
+        print('Input:')
+        print(line)
+        ids = dataset.tokenize(line)
+        while len(ids) < max_length:
           ids.append(dataset.type_to_ix['_PAD'])
-        output = sess.run(m.generative_output, feed_dict={m.inputs: [ids]})
-        for i in xrange(36):
-          print(dataset.untokenize(output.predicted_ids[0][i], join_str=''))
-        exit()
-        # output_file.write(decoded + '\n')
+        fd = {m.inputs: [ids], m.temperature: 1.}
+        output = dataset.untokenize(
+          sess.run(m.generative_output[0].sample_id, feed_dict=fd)[0],
+          join_str='')
+        print('Output:')
+        print(output)
+        output_file.write(output + '\n')
 
 def main(_):
   """Called by `tf.app.run` method."""
