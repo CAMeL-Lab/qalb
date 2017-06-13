@@ -132,7 +132,11 @@ source_sentences, gold_edits = load_annotation(gold_file)
 
 # load system hypotheses
 fin = smart_open(system_file, 'r')
-system_sentences = [line.decode("utf8").strip() for line in fin.readlines()]
+system_sentences = []
+for line in fin.readlines():
+    # print(repr(line))
+    system_sentences.append(line.decode("latin-1").strip())
+# system_sentences = [line.decode("utf-8").strip() for line in fin.readlines()]
 fin.close()
 
 p, r, f1 = levenshtein.batch_multi_pre_rec_f1(system_sentences, source_sentences, gold_edits, max_unchanged_words, beta, ignore_whitespace_casing, verbose, very_verbose)
