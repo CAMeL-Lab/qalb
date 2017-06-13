@@ -184,7 +184,7 @@ def decode():
     print("Restored model (global step {})".format(m.global_step.eval()))
     
     with open(FLAGS.output_path, 'w') as output_file:
-      for line in lines:
+      for i, line in enumerate(lines):
         line = ' '.join(line.split()[1:])
         print('Input:')
         print(line)
@@ -192,12 +192,11 @@ def decode():
         while len(ids) < max_length:
           ids.append(dataset.type_to_ix['_PAD'])
         fd = {m.inputs: [ids], m.temperature: 1.}
-        output = dataset.untokenize(
-          sess.run(m.generative_output[0].sample_id, feed_dict=fd)[0],
-          join_str='')
+        o_ids = sess.run(m.generative_output[0].sample_id, feed_dict=fd)[0]
+        output = '{0} {1}\n'.format(i, dataset.untokenize(o_ids, join_str=''))
         print('Output:')
         print(output)
-        output_file.write(output + '\n')
+        output_file.write(output)
 
 def main(_):
   """Called by `tf.app.run` method."""
