@@ -23,7 +23,7 @@ class Seq2Seq(BaseModel):
                rnn_layers=2, bidirectional_encoder=True, add_fw_bw=True,
                pyramid_encoder=False, max_grad_norm=5., epsilon=1e-8,
                use_lstm=False, use_residual=False, use_luong_attention=True,
-               beam_size=1, dropout=1., p_sample=0, **kw):
+               beam_size=1, dropout=1., **kw):
     """TODO: add documentation for all arguments."""
     self.num_types = num_types
     self.max_encoder_length = max_encoder_length
@@ -45,7 +45,7 @@ class Seq2Seq(BaseModel):
     self.beam_size = beam_size
     self.dropout = dropout
     self.p_sample = tf.Variable(
-      p_sample, trainable=False, dtype=tf.float32, name='p_sample')
+      0., trainable=False, dtype=tf.float32, name='p_sample')
     super(Seq2Seq, self).__init__(**kw)
   
   
@@ -93,8 +93,12 @@ class Seq2Seq(BaseModel):
       tvars = tf.trainable_variables()
       grads, _ = tf.clip_by_global_norm(
         tf.gradients(loss, tvars), self.max_grad_norm)
-      self.optimizer = tf.train.AdamOptimizer(self.lr, epsilon=self.epsilon)
-      self.train_op = self.optimizer.apply_gradients(
+      # Include a gradient descent op; switching can prove helpful
+      adam_optimizer = tf.train.AdamOptimizer(self.lr, epsilon=self.epsilon)
+      gradient_descent = tf.train.GradientDescentOptimizer(self.lr)
+      self.adam = adam_optimizer.apply_gradients(
+        zip(grads, tvars), global_step=self.global_step)
+      self.sgd = gradient_descent.apply_gradients(
         zip(grads, tvars), global_step=self.global_step)
   
   

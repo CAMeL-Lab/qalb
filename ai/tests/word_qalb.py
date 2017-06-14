@@ -28,6 +28,8 @@ tf.app.flags.DEFINE_boolean('use_residual', False, "Set to True to add the RNN"
                             " inputs to the outputs.")
 tf.app.flags.DEFINE_boolean('use_luong_attention', True, "Set to False to use"
                             " Bahdanau (additive) attention.")
+tf.app.flags.DEFINE_float('temperature', 1., "Divide logits by this number."
+                          "sample from the decoder's own predictions.")
 tf.app.flags.DEFINE_float('p_sample', 0., "Initial probability to."
                           "sample from the decoder's own predictions.")
 tf.app.flags.DEFINE_float('p_sample_decay', 0., "How much to change the"
@@ -166,8 +168,9 @@ def decode():
     with open(os.path.join('output', 'decoder.out'), 'w') as output_file:
       for line in lines:
         ids = [dataset.tokenize(line.split()[1:])]
-        decoded = sess.run(m.generative_output, feed_dict={m.inputs: ids})
-        output_file.write(dataset.untokenize(decoded[0]) + '\n')
+        feed_dict = {m.inputs: ids, m.temperature: FLAGS.temperature}
+        decoded = sess.run(m.generative_output, feed_dict=feed_dict)[0]
+        output_file.write(dataset.untokenize(decoded) + '\n')
 
 def main(_):
   """Called by `tf.app.run` method."""

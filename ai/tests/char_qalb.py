@@ -37,10 +37,8 @@ tf.app.flags.DEFINE_integer('switch_to_sgd', None, "Set to a number of steps"
 tf.app.flags.DEFINE_float('dropout', 1., "Keep probability for dropout on the"
                           "RNNs' non-recurrent connections.")
 tf.app.flags.DEFINE_integer('gram_order', 1, "Size of the n-grams.")
-tf.app.flags.DEFINE_float('p_sample', 0., "Initial probability to."
-                          "sample from the decoder's own predictions.")
-tf.app.flags.DEFINE_float('p_sample_decay', 0., "How much to change the"
-                          "decoder sampling probability at every time step.")
+tf.app.flags.DEFINE_float('p_sample_decay', 0., "Inverse sigmoid decay"
+                          " parameter for scheduled sampling (0 = no sample).")
 
 ### CONFIG
 tf.app.flags.DEFINE_integer('max_sentence_length', 400, "Max. word length of"
@@ -84,8 +82,8 @@ def train():
                 max_grad_norm=FLAGS.max_grad_norm, epsilon=FLAGS.epsilon,
                 use_lstm=FLAGS.use_lstm, use_residual=FLAGS.use_residual,
                 use_luong_attention=FLAGS.use_luong_attention, beam_size=1,
-                dropout=FLAGS.dropout, p_sample=FLAGS.p_sample,
-                restore=FLAGS.restore, model_name=FLAGS.model_name)
+                dropout=FLAGS.dropout, restore=FLAGS.restore,
+                model_name=FLAGS.model_name)
 
   with tf.Session(graph=graph) as sess:
     print("Initializing or restoring model...")
@@ -94,20 +92,19 @@ def train():
     while True:
       step = m.global_step.eval()
       
-      # Check the switch to SGD
-      if FLAGS.switch_to_sgd and step > FLAGS.switch_to_sgd:
-        m.optimizer = tf.train.GradientDescentOptimizer(.5)
-      
       # Gradient descent and backprop
       train_inputs, train_labels = dataset.get_batch()
       train_fd = {m.inputs: train_inputs, m.labels: train_labels}
-      sess.run(m.train_op, feed_dict=train_fd)
       
-      # Decay sampling probability
-      new_p_sample = tf.reduce_min(
-        [1., m.p_sample.eval() + FLAGS.p_sample_decay]
-      )
-      sess.run(tf.assign(m.p_sample, new_p_sample))
+      if FLAGS.switch_to_sgd and step >= FLAGS.switch_to_sgd:
+        sess.run(m.sgd, feed_dict=train_fd)
+      else:
+        sess.run(m.adam, feed_dict=train_fd)
+      
+      # Decay sampling probability with inverse sigmoid decay
+      k = FLAGS.p_sample_decay
+      if k > 0:
+        sess.run(tf.assign(m.p_sample, 1 - k / (k + np.exp(step/k))))
       
       if step % FLAGS.num_steps_per_eval == 0:
         
