@@ -48,7 +48,7 @@ class BaseQALB(BaseDataset):
   __metaclass__ = ABCMeta
   
   def __init__(self, file_root, max_input_length=None, max_label_length=None,
-               extension='.sbw', **kw):
+               extension='.orig', **kw):
     """Arguments:
        `file_root`: the root name of the files in the data/qalb directory.
         The constructor searches for .*.sent, .*.m2, where * is train and dev.
@@ -166,7 +166,7 @@ class CharQALB(BaseQALB):
   def make_pairs(self, input_lines, label_lines):
     pairs = []
     for i in xrange(len(input_lines)):
-      input_line = ' '.join(input_lines[i].split()[1:])  # remove document id
+      input_line = input_lines[i]
       label_line = label_lines[i][:-1]  # remove newline
       pairs.append(self.make_pair(input_line, label_line))
     return pairs
@@ -178,7 +178,7 @@ class WordQALB(BaseQALB):
   def make_pairs(self, input_lines, label_lines):
     pairs = []
     for i in xrange(len(input_lines)):
-      input_line = input_lines[i].split()[1:]  # remove document id
+      input_line = input_lines[i].split()
       label_line = label_lines[i].split()
       pairs.append(self.make_pair(input_line, label_line))
     return pairs

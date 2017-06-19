@@ -13,21 +13,14 @@ class BaseModel(object):
   """Model abstraction to handle restoring variables and summary writers."""
   __metaclass__ = ABCMeta
   
-  def __init__(self, lr=1., lr_decay=1., restore=False, model_name='default'):
+  def __init__(self, restore=False, model_name='default'):
     """The constructor builds the model's computational graph. Thus, it should
        always be called within a graph scope.
        Keyword arguments:
-       `lr`: the learning rate,
-       `lr_decay`: the learning rate decay,
        `restore`: whether to override or use the model's pre-trained variables,
        `model_name`: string for the model's checkpoint and summary outputs."""
-    self.lr = tf.Variable(lr, trainable=False, name='lr')
-    self.lr_decay = lr_decay
     self.global_step = tf.Variable(0, trainable=False, name='global_step')
     self.build_graph()
-    # Operation for decaying learning rate
-    with tf.name_scope('decay_lr'):
-      self.decay_lr = tf.assign(self.lr, self.lr * self.lr_decay)
     self.summary_op = tf.summary.merge_all()
     # Default configurations
     self.restore = restore

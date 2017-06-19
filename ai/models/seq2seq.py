@@ -23,7 +23,7 @@ class Seq2Seq(BaseModel):
                rnn_layers=2, bidirectional_encoder=True, add_fw_bw=True,
                pyramid_encoder=False, max_grad_norm=5., epsilon=1e-8,
                use_lstm=False, use_residual=False, use_luong_attention=True,
-               beam_size=1, dropout=1., **kw):
+               dropout=1., **kw):
     """TODO: add documentation for all arguments."""
     self.num_types = num_types
     self.max_encoder_length = max_encoder_length
@@ -175,7 +175,7 @@ class Seq2Seq(BaseModel):
       decoder_cell, sampling_helper, initial_state, output_layer=dense)
     decoder_output = tf.contrib.seq2seq.dynamic_decode(decoder)
     logits = decoder_output[0].rnn_output
-    # TODO: allow custom length penalty weight
+    # TODO: make this actually work
     # generative_decoder = tf.contrib.seq2seq.BeamSearchDecoder(
     #   decoder_cell, self.get_embeddings,
     #   tf.tile([self.go_id], [self.batch_size]), self.eos_id,

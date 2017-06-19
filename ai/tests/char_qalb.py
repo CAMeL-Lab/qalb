@@ -3,25 +3,28 @@
 from __future__ import division, print_function
 
 import os
+import re
 import sys
 
 import numpy as np
 import tensorflow as tf
 
 from ai.datasets import CharQALB
-from ai.models import Seq2Seq
+from ai.models import ExperimentalSeq2Seq
 
 
 ### HYPERPARAMETERS
-tf.app.flags.DEFINE_float('lr', 5e-4, "Learning rate.")
-tf.app.flags.DEFINE_float('lr_decay', 1., "Learning rate decay.")
+tf.app.flags.DEFINE_float('adam_lr', 5e-4, "Learning rate.")
+tf.app.flags.DEFINE_float('adam_lr_decay', .5, "Learning rate decay.")
+tf.app.flags.DEFINE_float('gd_lr', .1, "Learning rate.")
+tf.app.flags.DEFINE_float('gd_lr_decay', .5, "Learning rate decay.")
 tf.app.flags.DEFINE_integer('batch_size', 20, "Batch size.")
 tf.app.flags.DEFINE_integer('embedding_size', 256, "Number of hidden units.")
 tf.app.flags.DEFINE_integer('rnn_layers', 2, "Number of RNN layers.")
 tf.app.flags.DEFINE_boolean('bidirectional_encoder', True, "Whether to use a"
                             " bidirectional RNN in the encoder's 1st layer.")
-tf.app.flags.DEFINE_boolean('add_fw_bw', True, "Set to False to concatenate"
-                            " and project the bidirectional RNN output.")
+tf.app.flags.DEFINE_string('bidirectional_mode', 'add', "Set to 'add',"
+                           " 'concat' or 'project'.")
 tf.app.flags.DEFINE_boolean('pyramid_encoder', False, "Set to True to use an"
                             " encoder that halves the time steps per layer.")
 tf.app.flags.DEFINE_float('max_grad_norm', 5., "Clip gradients to this norm.")
@@ -36,16 +39,15 @@ tf.app.flags.DEFINE_integer('switch_to_sgd', None, "Set to a number of steps"
                             " to pass for the optimizer to switch to SGD.")
 tf.app.flags.DEFINE_float('dropout', 1., "Keep probability for dropout on the"
                           "RNNs' non-recurrent connections.")
-tf.app.flags.DEFINE_integer('gram_order', 1, "Size of the n-grams.")
 tf.app.flags.DEFINE_float('p_sample_decay', 0., "Inverse sigmoid decay"
                           " parameter for scheduled sampling (0 = no sample).")
 
 ### CONFIG
 tf.app.flags.DEFINE_integer('max_sentence_length', 400, "Max. word length of"
                             " training examples (both inputs and labels).")
-tf.app.flags.DEFINE_integer('num_steps_per_eval', 10, "Number of steps to wait"
+tf.app.flags.DEFINE_integer('num_steps_per_eval', 20, "Number of steps to wait"
                             " before running the graph with the dev set.")
-tf.app.flags.DEFINE_integer('num_steps_per_save', 50, "Number of steps to wait"
+tf.app.flags.DEFINE_integer('num_steps_per_save', 100, "Number of steps"
                             " before saving the trainable variables.")
 tf.app.flags.DEFINE_string('decode', None, "Set to a path to run on a file.")
 tf.app.flags.DEFINE_string('output_path', os.path.join('output', 'result.txt'),                         "Name of the output file with decoding results.")
@@ -58,32 +60,34 @@ FLAGS = tf.app.flags.FLAGS
 
 def train():
   """Run a loop that continuously trains the model."""
+  
   print("Building dynamic character-level QALB data...")
-  dataset = CharQALB('QALB', batch_size=FLAGS.batch_size,
-                     gram_order=FLAGS.gram_order,
-                     max_input_length=FLAGS.max_sentence_length,
-                     max_label_length=FLAGS.max_sentence_length)
+  dataset = CharQALB(
+    'QALB', batch_size=FLAGS.batch_size,
+    max_input_length=FLAGS.max_sentence_length,
+    max_label_length=FLAGS.max_sentence_length)
+  
   print("Building computational graph...")
   graph = tf.Graph()
   with graph.as_default():
     # pylint: disable=invalid-name
-    m = Seq2Seq(num_types=dataset.num_types(),
-                max_encoder_length=FLAGS.max_sentence_length,
-                max_decoder_length=FLAGS.max_sentence_length,
-                pad_id=dataset.type_to_ix['_PAD'],
-                eos_id=dataset.type_to_ix['_EOS'],
-                go_id=dataset.type_to_ix['_GO'], lr=FLAGS.lr,
-                lr_decay=FLAGS.lr_decay, batch_size=FLAGS.batch_size,
-                embedding_size=FLAGS.embedding_size,
-                rnn_layers=FLAGS.rnn_layers,
-                bidirectional_encoder=FLAGS.bidirectional_encoder,
-                add_fw_bw=FLAGS.add_fw_bw,
-                pyramid_encoder=FLAGS.pyramid_encoder,
-                max_grad_norm=FLAGS.max_grad_norm, epsilon=FLAGS.epsilon,
-                use_lstm=FLAGS.use_lstm, use_residual=FLAGS.use_residual,
-                use_luong_attention=FLAGS.use_luong_attention, beam_size=1,
-                dropout=FLAGS.dropout, restore=FLAGS.restore,
-                model_name=FLAGS.model_name)
+    m = ExperimentalSeq2Seq(
+      num_types=dataset.num_types(),
+      max_encoder_length=FLAGS.max_sentence_length,
+      max_decoder_length=FLAGS.max_sentence_length,
+      pad_id=dataset.type_to_ix['_PAD'],
+      eos_id=dataset.type_to_ix['_EOS'],
+      go_id=dataset.type_to_ix['_GO'],
+      adam_lr=FLAGS.adam_lr, adam_lr_decay=FLAGS.adam_lr_decay,
+      gd_lr=FLAGS.gd_lr, gd_lr_decay=FLAGS.gd_lr_decay,
+      batch_size=FLAGS.batch_size, embedding_size=FLAGS.embedding_size,
+      rnn_layers=FLAGS.rnn_layers,
+      bidirectional_encoder=FLAGS.bidirectional_encoder,
+      bidirectional_mode=FLAGS.bidirectional_mode,
+      pyramid_encoder=FLAGS.pyramid_encoder, max_grad_norm=FLAGS.max_grad_norm,
+      epsilon=FLAGS.epsilon, use_lstm=FLAGS.use_lstm,
+      use_residual=FLAGS.use_residual, beam_size=1, dropout=FLAGS.dropout,
+      restore=FLAGS.restore, model_name=FLAGS.model_name)
 
   with tf.Session(graph=graph) as sess:
     print("Initializing or restoring model...")
@@ -115,9 +119,11 @@ def train():
         # Evaluate and show samples on validation set
         valid_inputs, valid_labels = dataset.get_batch(draw_from_valid=True)
         valid_fd = {m.inputs: valid_inputs, m.labels: valid_labels}
-        valid_ppx, valid_output, valid_summary = sess.run(
-          [m.perplexity, m.output, m.summary_op], feed_dict=valid_fd
+        valid_ppx, valid_output, valid_gen_output, valid_summary = sess.run(
+          [m.perplexity, m.output, m.generative_output, m.summary_op],
+          feed_dict=valid_fd
         )
+        valid_gen_output = valid_gen_output[0].sample_id
         
         # Write summaries to TensorBoard
         m.train_writer.add_summary(train_summary, global_step=step)
@@ -127,12 +133,14 @@ def train():
               "".format(step, lr, p_sample, train_ppx, valid_ppx)
              )
         print("==============================================================")
-        print("Sample input:")
+        print("Input:")
         print(repr(dataset.untokenize(valid_inputs[0], join_str='')))
-        print("Sample target:")
+        print("Target:")
         print(repr(dataset.untokenize(valid_labels[0], join_str='')))
-        print("Sample output:")
+        print("Output with ground truth:")
         print(repr(dataset.untokenize(valid_output[0], join_str='')))
+        print("Decoded output:")
+        print(repr(dataset.untokenize(valid_gen_output[0], join_str='')))
         sys.stdout.flush()
       
       if step % FLAGS.num_steps_per_save == 0:
@@ -143,37 +151,52 @@ def train():
         sys.stdout.flush()
 
 
+def max_repetitions(s, threshold=8):
+  """Find the largest contiguous repeating substring in s, repeating itself at
+     least `threshold` times. Example:
+     >>> max_repetitions("blablasbla")  # returns ['bla', 2]."""
+  r = re.compile(r'(.+?)\1{%d,}' % threshold)
+  max_repeated = None
+  for match in r.finditer(s):
+    new_repeated = [match.group(1), len(match.group(0))/len(match.group(1))]
+    if max_repeated is None or max_repeated[1] < new_repeated[1]:
+      max_repeated = new_repeated
+  return max_repeated
+
+
 def decode():
   """Run a blind test on the file with path given by the `decode` flag."""
+  
   print("Reading data...")
   with open(FLAGS.decode) as test_file:
     lines = test_file.readlines()
+    # Get the largest sentence length to set an upper bound to the decoder
+    # TODO: add some heuristic to allow that to increase a bit more
     max_length = max(map(lambda line: len(' '.join(line.split()[1:])), lines))
   
   print("Building dynamic word-level QALB data...")
-  dataset = CharQALB('QALB', batch_size=1, gram_order=FLAGS.gram_order,
-                     max_input_length=max_length,
-                     max_label_length=max_length)
+  dataset = CharQALB(
+    'QALB', batch_size=1,
+    max_input_length=max_length, max_label_length=max_length)
+  
   print("Building computational graph...")
   graph = tf.Graph()
   with graph.as_default():
     # TODO: remove constants dependent on dataset instance; save them in model.
     # pylint: disable=invalid-name
-    m = Seq2Seq(num_types=dataset.num_types(),
-                max_encoder_length=max_length,
-                max_decoder_length=max_length,
-                pad_id=dataset.type_to_ix['_PAD'],
-                eos_id=dataset.type_to_ix['_EOS'],
-                go_id=dataset.type_to_ix['_GO'], batch_size=1,
-                embedding_size=FLAGS.embedding_size,
-                rnn_layers=FLAGS.rnn_layers,
-                bidirectional_encoder=FLAGS.bidirectional_encoder,
-                add_fw_bw=FLAGS.add_fw_bw,
-                pyramid_encoder=FLAGS.pyramid_encoder, use_lstm=FLAGS.use_lstm,
-                use_residual=FLAGS.use_residual,
-                use_luong_attention=FLAGS.use_luong_attention,
-                beam_size=FLAGS.beam_size, restore=True,
-                model_name=FLAGS.model_name)
+    m = ExperimentalSeq2Seq(
+      num_types=dataset.num_types(),
+      max_encoder_length=max_length, max_decoder_length=max_length,
+      pad_id=dataset.type_to_ix['_PAD'],
+      eos_id=dataset.type_to_ix['_EOS'],
+      go_id=dataset.type_to_ix['_GO'],
+      batch_size=1, embedding_size=FLAGS.embedding_size,
+      rnn_layers=FLAGS.rnn_layers,
+      bidirectional_encoder=FLAGS.bidirectional_encoder,
+      bidirectional_mode=FLAGS.bidirectional_mode,
+      pyramid_encoder=FLAGS.pyramid_encoder, use_lstm=FLAGS.use_lstm,
+      use_residual=FLAGS.use_residual, beam_size=FLAGS.beam_size,
+      restore=True, model_name=FLAGS.model_name)
   
   with tf.Session(graph=graph) as sess:
     print("Restoring model...")
@@ -190,10 +213,12 @@ def decode():
           ids.append(dataset.type_to_ix['_PAD'])
         fd = {m.inputs: [ids], m.temperature: 1.}
         o_ids = sess.run(m.generative_output[0].sample_id, feed_dict=fd)[0]
-        output = dataset.untokenize(o_ids, join_str='') + '\n'
+        # Remove the _EOS token
+        output = dataset.untokenize(o_ids, join_str='')[-1] + '\n'
         print('Output:')
         print(output)
         output_file.write(output)
+
 
 def main(_):
   """Called by `tf.app.run` method."""
