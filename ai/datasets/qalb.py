@@ -48,14 +48,14 @@ class BaseQALB(BaseDataset):
   __metaclass__ = ABCMeta
   
   def __init__(self, file_root, max_input_length=None, max_label_length=None,
-               extension='.orig', **kw):
+               extension='', **kw):
     """Arguments:
        `file_root`: the root name of the files in the data/qalb directory.
-        The constructor searches for .*.sent, .*.m2, where * is train and dev.
+        The constructor searches for .*.orig, .*.m2, where * is train and dev.
        Keyword arguments:
        `max_input_length`: maximum sequence length for the inputs,
        `max_label_length`: maximum sequence length for the labels,
-       `extension`: name of the data file extensions (or none if it's falsy).
+       `extension`: name of the data file extensions,
        Note on usage: to account for the _GO and _EOS tokens that the labels
        have inserted, if the maximum length sequences are in the labels, use
        two extra time steps if the goal is to not truncate anything."""
@@ -63,15 +63,13 @@ class BaseQALB(BaseDataset):
     self.file_root = file_root
     self.max_input_length = max_input_length
     self.max_label_length = max_label_length
-    if not extension:
-      extension = ''
     self.extension = extension
     data_dir = os.path.join('ai', 'datasets', 'data', 'qalb')
     # Prepare training data
     train_input_path = os.path.join(
-      data_dir, self.file_root + '.train.sent' + self.extension
+      data_dir, self.file_root + '.train.orig' + self.extension
     )
-    train_labels = self.flatten_gold(
+    train_labels = self.maybe_flatten_gold(
       os.path.join(data_dir, self.file_root + '.train')  # method completes it
     )
     with open(train_input_path) as train_file:
@@ -79,30 +77,35 @@ class BaseQALB(BaseDataset):
     self.max_train_lengths = max_length_seq(self.train_pairs)
     # Prepare validation data
     valid_input_path = os.path.join(
-      data_dir, self.file_root + '.dev.sent' + self.extension
+      data_dir, self.file_root + '.dev.orig' + self.extension
     )
-    valid_labels = self.flatten_gold(
+    valid_labels = self.maybe_flatten_gold(
       os.path.join(data_dir, self.file_root + '.dev')
     )
     with open(valid_input_path) as valid_file:
       self.valid_pairs = self.make_pairs(valid_file.readlines(), valid_labels)
     self.max_valid_lengths = max_length_seq(self.valid_pairs)
   
-  def flatten_gold(self, file_root):
+  def maybe_flatten_gold(self, file_root, force=False):
     """Create and return the contents a provided filename that generates a
        parallel corpus to the inputs, following the corrections provided in the
        default gold file m2 format. Note that this step is necessary for
        seq2seq training, and code cannot be borrowed from the evaluation script
        because it never flattens the system output; instead, it finds the
        minimum number of corrections that map the input into the output."""
-    with open(file_root + '.m2' + self.extension) as m2_file:
+    m2_path = file_root + '.m2' + self.extension
+    gold_path = file_root + '.gold' + self.extension
+    if not force and os.path.exists(gold_path):
+      with open(gold_path) as gold_file:
+        return gold_file.readlines()
+    with open(m2_path) as m2_file:
       raw_m2_data = m2_file.read().split('\n\n')[:-1]  # remove last empty str
     result = []
     for raw_pair in raw_m2_data:
       text = raw_pair.split('\n')[0][2:]  # remove the S marker
       corrections = map(parse_correction, raw_pair.split('\n')[1:])
       result.append(apply_corrections(text, corrections))
-    with open(file_root + '.gold' + self.extension, 'w') as gold_file:
+    with open(gold_path) as gold_file:
       gold_file.writelines(result)
     return result
   
