@@ -19,11 +19,11 @@ class Seq2Seq(BaseModel):
      3. A `go_id` is reserved for the model to provide to the decoder."""
   
   def __init__(self, num_types=0, max_encoder_length=99, max_decoder_length=99,
-               pad_id=0, eos_id=1, go_id=2, batch_size=32, embedding_size=128,
-               rnn_layers=2, bidirectional_encoder=True, add_fw_bw=True,
-               pyramid_encoder=False, max_grad_norm=5., epsilon=1e-8,
-               use_lstm=False, use_residual=False, use_luong_attention=True,
-               dropout=1., **kw):
+               pad_id=0, eos_id=1, go_id=2, lr=1e-3, batch_size=32,
+               embedding_size=128, rnn_layers=2, bidirectional_encoder=True,
+               add_fw_bw=True, pyramid_encoder=False, max_grad_norm=5.,
+               epsilon=1e-8, use_lstm=False, use_residual=False,
+               use_luong_attention=True, beam_size=1, dropout=1., **kw):
     """TODO: add documentation for all arguments."""
     self.num_types = num_types
     self.max_encoder_length = max_encoder_length
@@ -44,6 +44,8 @@ class Seq2Seq(BaseModel):
     self.use_luong_attention = use_luong_attention
     self.beam_size = beam_size
     self.dropout = dropout
+    self.lr = tf.Variable(
+      0., trainable=False, dtype=tf.float32, name='learning_rate')
     self.p_sample = tf.Variable(
       0., trainable=False, dtype=tf.float32, name='p_sample')
     super(Seq2Seq, self).__init__(**kw)
@@ -103,6 +105,8 @@ class Seq2Seq(BaseModel):
   
   
   def build_encoder(self, encoder_input):
+    """TODO: add doc."""
+    
     input_lengths = self.get_sequence_length(self.inputs)
     if self.bidirectional_encoder:
       (encoder_fw_out, encoder_bw_out), _ = tf.nn.bidirectional_dynamic_rnn(
@@ -140,6 +144,8 @@ class Seq2Seq(BaseModel):
   
   
   def build_decoder(self, encoder_output, decoder_input):
+    """TODO: add doc."""
+    
     # The first RNN is wrapped with the attention mechanism
     if self.use_luong_attention:
       attention_mechanism = tf.contrib.seq2seq.LuongAttention
@@ -182,7 +188,8 @@ class Seq2Seq(BaseModel):
     #   initial_state, self.beam_size, output_layer=dense)
     ### TEMPORARY
     ghelper = tf.contrib.seq2seq.GreedyEmbeddingHelper(
-      self.get_embeddings, tf.tile([self.go_id], [self.batch_size]), self.eos_id)
+      self.get_embeddings, tf.tile([self.go_id], [self.batch_size]),
+      self.eos_id)
     generative_decoder = tf.contrib.seq2seq.BasicDecoder(
       decoder_cell, ghelper, initial_state, output_layer=dense)
     ### END TEMPORARY

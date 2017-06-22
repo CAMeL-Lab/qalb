@@ -19,12 +19,14 @@ class ExperimentalSeq2Seq(BaseModel):
      3. A `go_id` is reserved for the model to provide to the decoder."""
   
   def __init__(self, num_types=0, max_encoder_length=99, max_decoder_length=99,
-               pad_id=0, eos_id=1, go_id=2, adam_lr=1e-3, adam_lr_decay=1.,
-               gd_lr=.1, gd_lr_decay=1., batch_size=32, embedding_size=128,
-               rnn_layers=2, bidirectional_encoder=False,
-               bidirectional_mode='add', pyramid_encoder=False,
-               max_grad_norm=5., epsilon=1e-8, use_lstm=False,
-               use_residual=False, dropout=1., feed_inputs=False, **kw):
+               pad_id=0, eos_id=1, go_id=2,
+               adam_lr=1e-3, adam_lr_decay=1.,
+               gd_lr=.1, gd_lr_decay=1.,
+               batch_size=32, embedding_size=128, rnn_layers=2,
+               bidirectional_encoder=False, bidirectional_mode='add',
+               pyramid_encoder=False, use_lstm=False, use_residual=False,
+               attention=None, feed_inputs=False, dropout=1.,
+               max_grad_norm=5., epsilon=1e-8, beam_size=1., **kw):
     """Keyword args:
        `num_types`: number of unique types (e.g. vocabulary or alphabet size),
        `max_encoder_length`: max length of the encoder,
@@ -50,16 +52,17 @@ class ExperimentalSeq2Seq(BaseModel):
        `pyramid_encoder`: whether to use a pyramid encoder that halves the
         number of time steps per layer (Xie et al.,
         https://arxiv.org/pdf/1603.09727),
-       `max_grad_norm`: clip gradients to maximally this norm,
-       `epsilon`: small numerical constant for AdamOptimizer (default 1e-8),
        `use_lstm`: set to False to use a GRU cell (Cho et al.,
         https://arxiv.org/abs/1406.1078),
        `use_residual`: whether to use residual connections between RNN cells
         (Wu et al., https://arxiv.org/pdf/1609.08144.pdf),
+       `attention`: 'bahdanau', or 'luong' (none by default),
+       `feed_inputs`: set to True to feed attention-based inputs to the
+        decoder RNN (Luong et al., https://arxiv.org/abs/1508.04025),
        `dropout`: keep probability for the non-recurrent connections between
         RNN cells. Defaults to 1.0; i.e. no dropout,
-       `feed_inputs`: set to True to feed attention-based inputs to the
-        decoder RNN (Luong et al., https://arxiv.org/abs/1508.04025)."""
+       `max_grad_norm`: clip gradients to maximally this norm,
+       `epsilon`: small numerical constant for AdamOptimizer (default 1e-8)."""
     self.num_types = num_types
     self.max_encoder_length = max_encoder_length
     self.max_decoder_length = max_decoder_length
@@ -74,12 +77,14 @@ class ExperimentalSeq2Seq(BaseModel):
     self.bidirectional_encoder = bidirectional_encoder
     self.bidirectional_mode = bidirectional_mode
     self.pyramid_encoder = pyramid_encoder
-    self.max_grad_norm = max_grad_norm
-    self.epsilon = epsilon
     self.use_lstm = use_lstm
     self.use_residual = use_residual
-    self.beam_size = beam_size
+    self.attention = attention
+    self.feed_inputs = feed_inputs
     self.dropout = dropout
+    self.max_grad_norm = max_grad_norm
+    self.epsilon = epsilon
+    self.beam_size = beam_size
     # Use graph variables for learning rates to allow them to be modified/saved
     self.adam_lr = tf.Variable(
       adam_lr, trainable=False, dtype=tf.float32, name='adam_learning_rate')
@@ -89,7 +94,7 @@ class ExperimentalSeq2Seq(BaseModel):
     # sampling paper (Bengio et al., https://arxiv.org/abs/1506.03099)
     self.p_sample = tf.Variable(
       0., trainable=False, dtype=tf.float32, name='sampling_probability')
-    super(Seq2Seq, self).__init__(**kw)
+    super(ExperimentalSeq2Seq, self).__init__(**kw)
   
   
   def build_graph(self):
@@ -145,8 +150,9 @@ class ExperimentalSeq2Seq(BaseModel):
       tvars = tf.trainable_variables()
       grads, _ = tf.clip_by_global_norm(
         tf.gradients(loss, tvars), self.max_grad_norm)
-      adam_optimizer = tf.train.AdamOptimizer(self.lr, epsilon=self.epsilon)
-      gradient_descent = tf.train.GradientDescentOptimizer(self.lr)
+      adam_optimizer = tf.train.AdamOptimizer(
+        self.adam_lr, epsilon=self.epsilon)
+      gradient_descent = tf.train.GradientDescentOptimizer(self.gd_lr)
       self.adam = adam_optimizer.apply_gradients(
         zip(grads, tvars), global_step=self.global_step)
       self.sgd = gradient_descent.apply_gradients(
@@ -208,18 +214,6 @@ class ExperimentalSeq2Seq(BaseModel):
         tf.sign(tf.abs(sequence_batch - self.pad_id)), reduction_indices=1)
   
   
-  def process_bidirectional_output(self, fw_out, bw_out, name_index=0):
-    """Postprocess the output of a bidirectional RNN layer."""
-    if self.bidirectional_mode == 'add':
-      return fw_out + bw_out
-    concat_out = tf.concat([fw_out, bw_out], 2)
-    if self.bidirectional_mode == 'project':
-      return tf.layers.dense(
-        concat_out, self.embedding_size, activation=tf.tanh,
-        name='bidirectional_projection_0')
-    return concat_out
-  
-  
   def build_encoder(self, encoder_input):
     """Build the RNN stack for the encoder, depending on the initial config."""
     input_lengths = self.get_sequence_length(self.inputs)
@@ -236,7 +230,7 @@ class ExperimentalSeq2Seq(BaseModel):
         encoder_output = encoder_fw_out + encoder_bw_out
       else:
         encoder_output = tf.concat([encoder_fw_out, encoder_bw_out], 2)
-        if self.bidirectional_mode = 'project':
+        if self.bidirectional_mode == 'project':
           encoder_output = tf.layers.dense(
             encoder_output, self.embedding_size, activation=tf.tanh,
             name='bidirectional_projection')
@@ -274,12 +268,18 @@ class ExperimentalSeq2Seq(BaseModel):
     """Build the decoder RNN stack and the final prediction layer."""
     
     # The first RNN is wrapped with the attention mechanism
-    if self.use_luong_attention:
-      attention_mechanism = tf.contrib.seq2seq.LuongAttention
-    else:
-      attention_mechanism = tf.contrib.seq2seq.BahdanauAttention
-    decoder_cell = self.rnn_cell(attention_mechanism=attention_mechanism(
-      self.embedding_size, encoder_output))
+    # TODO: make Luong attention actually follow the computational steps
+    # described in the paper and implement input-feeding approach
+    # (Luong et al., https://arxiv.org/abs/1508.04025)
+    attention_mechanism = None
+    if self.attention == 'bahdanau':
+      attention_mechanism = tf.contrib.seq2seq.BahdanauAttention(
+        self.embedding_size, encoder_output)
+    elif self.attention == 'luong':
+      attention_mechanism = tf.contrib.seq2seq.LuongAttention(
+        self.embedding_size, encoder_output)
+    
+    decoder_cell = self.rnn_cell(attention_mechanism=attention_mechanism)
     
     # Use the first output of the encoder to learn an initial decoder state
     initial_state_pass = tf.split(tf.layers.dense(
@@ -287,14 +287,18 @@ class ExperimentalSeq2Seq(BaseModel):
       activation=tf.tanh, name='initial_decoder_state'
     ), self.rnn_layers, axis=1)
     beam_batch_size = self.batch_size * self.beam_size  # shortcut
-    initial_state = tf.contrib.seq2seq.AttentionWrapperState(
-      cell_state=initial_state_pass[0],
-      attention=tf.zeros([beam_batch_size, self.embedding_size]),
-      alignments=tf.zeros([beam_batch_size, self.max_decoder_length]),
-      time=tf.zeros(()), alignment_history=())
+    
+    if self.attention:
+      initial_state = tf.contrib.seq2seq.AttentionWrapperState(
+        cell_state=initial_state_pass[0],
+        attention=tf.zeros([beam_batch_size, self.embedding_size]),
+        alignments=tf.zeros([beam_batch_size, self.max_decoder_length]),
+        time=tf.zeros(()), alignment_history=())
+    else:
+      initial_state = initial_state_pass[0]
     
     # For deep RNNs, stack the cells and use an initial state that merges the
-    # attention initial state with the rest of the normal learned states
+    # initial state (maybe with attention) with the rest of the learned states
     if self.rnn_layers > 1:
       decoder_cell = tf.contrib.rnn.MultiRNNCell(
         [decoder_cell] + [self.rnn_cell()
