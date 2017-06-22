@@ -27,20 +27,20 @@ tf.app.flags.DEFINE_string('bidirectional_mode', 'add', "Set to 'add',"
                            " 'concat' or 'project'.")
 tf.app.flags.DEFINE_boolean('pyramid_encoder', False, "Set to True to use an"
                             " encoder that halves the time steps per layer.")
-tf.app.flags.DEFINE_float('max_grad_norm', 5., "Clip gradients to this norm.")
-tf.app.flags.DEFINE_float('epsilon', 1e-8, "Denominator constant for Adam.")
 tf.app.flags.DEFINE_boolean('use_lstm', False, "Set to False to use GRUs.")
 tf.app.flags.DEFINE_boolean('use_residual', False, "Set to True to add the RNN"
                             " inputs to the outputs.")
-tf.app.flags.DEFINE_boolean('use_luong_attention', True, "Set to False to use"
-                            " Bahdanau (additive) attention.")
-tf.app.flags.DEFINE_integer('beam_size', 1, "Beam search size.")
-tf.app.flags.DEFINE_integer('switch_to_sgd', None, "Set to a number of steps"
-                            " to pass for the optimizer to switch to SGD.")
+tf.app.flags.DEFINE_boolean('attention', None, "'bahdanau' or 'luong' (none)."
+                            " by default.")
 tf.app.flags.DEFINE_float('dropout', 1., "Keep probability for dropout on the"
                           "RNNs' non-recurrent connections.")
+tf.app.flags.DEFINE_float('max_grad_norm', 5., "Clip gradients to this norm.")
+tf.app.flags.DEFINE_float('epsilon', 1e-8, "Denominator constant for Adam.")
+tf.app.flags.DEFINE_integer('beam_size', 1, "Beam search size.")
 tf.app.flags.DEFINE_float('p_sample_decay', 0., "Inverse sigmoid decay"
                           " parameter for scheduled sampling (0 = no sample).")
+tf.app.flags.DEFINE_integer('switch_to_sgd', None, "Set to a number of steps"
+                            " to pass for the optimizer to switch to SGD.")
 
 ### CONFIG
 tf.app.flags.DEFINE_integer('max_sentence_length', 400, "Max. word length of"
@@ -50,7 +50,8 @@ tf.app.flags.DEFINE_integer('num_steps_per_eval', 20, "Number of steps to wait"
 tf.app.flags.DEFINE_integer('num_steps_per_save', 100, "Number of steps"
                             " before saving the trainable variables.")
 tf.app.flags.DEFINE_string('decode', None, "Set to a path to run on a file.")
-tf.app.flags.DEFINE_string('output_path', os.path.join('output', 'result.txt'),                         "Name of the output file with decoding results.")
+tf.app.flags.DEFINE_string('output_path', os.path.join('output', 'result.txt'),
+                           "Name of the output file with decoding results.")
 tf.app.flags.DEFINE_boolean('restore', True, "Whether to restore the model.")
 tf.app.flags.DEFINE_string('model_name', None, "Name of the output directory.")
 
@@ -97,6 +98,7 @@ def train():
       step = m.global_step.eval()
       
       # Gradient descent and backprop
+      # TODO: add lr decays
       train_inputs, train_labels = dataset.get_batch()
       train_fd = {m.inputs: train_inputs, m.labels: train_labels}
       
@@ -106,6 +108,7 @@ def train():
         sess.run(m.adam, feed_dict=train_fd)
       
       # Decay sampling probability with inverse sigmoid decay
+      # TODO: add options for different decays
       k = FLAGS.p_sample_decay
       if k > 0:
         sess.run(tf.assign(m.p_sample, 1 - k / (k + np.exp(step/k))))
@@ -114,7 +117,8 @@ def train():
         
         # Show learning rate and sample outputs from training set
         lr, train_ppx, p_sample, train_summary = sess.run(
-          [m.lr, m.perplexity, m.p_sample, m.summary_op], feed_dict=train_fd
+          [m.adam_lr, m.perplexity, m.p_sample, m.summary_op],
+          feed_dict=train_fd
         )
         # Evaluate and show samples on validation set
         valid_inputs, valid_labels = dataset.get_batch(draw_from_valid=True)
@@ -134,13 +138,13 @@ def train():
              )
         print("==============================================================")
         print("Input:")
-        print(repr(dataset.untokenize(valid_inputs[0], join_str='')))
+        print(dataset.untokenize(valid_inputs[0], join_str=''))
         print("Target:")
-        print(repr(dataset.untokenize(valid_labels[0], join_str='')))
+        print(dataset.untokenize(valid_labels[0], join_str=''))
         print("Output with ground truth:")
-        print(repr(dataset.untokenize(valid_output[0], join_str='')))
+        print(dataset.untokenize(valid_output[0], join_str=''))
         print("Decoded output:")
-        print(repr(dataset.untokenize(valid_gen_output[0], join_str='')))
+        print(dataset.untokenize(valid_gen_output[0], join_str=''))
         sys.stdout.flush()
       
       if step % FLAGS.num_steps_per_save == 0:
@@ -155,10 +159,11 @@ def max_repetitions(s, threshold=8):
   """Find the largest contiguous repeating substring in s, repeating itself at
      least `threshold` times. Example:
      >>> max_repetitions("blablasbla")  # returns ['bla', 2]."""
-  r = re.compile(r'(.+?)\1{%d,}' % threshold)
+  repetitions_re = re.compile(r'(.+?)\1{%d,}' % threshold)
   max_repeated = None
-  for match in r.finditer(s):
+  for match in repetitions_re.finditer(s):
     new_repeated = [match.group(1), len(match.group(0))/len(match.group(1))]
+    # pylint: disable=unsubscriptable-object
     if max_repeated is None or max_repeated[1] < new_repeated[1]:
       max_repeated = new_repeated
   return max_repeated
@@ -172,8 +177,8 @@ def decode():
     lines = test_file.readlines()
     # Get the largest sentence length to set an upper bound to the decoder
     # TODO: add some heuristic to allow that to increase a bit more
-    max_length = max(map(lambda line: len(' '.join(line.split()[1:])), lines))
-  
+    max_length = max([len(line) for line in lines])
+    
   print("Building dynamic word-level QALB data...")
   dataset = CharQALB(
     'QALB', batch_size=1,
@@ -205,16 +210,15 @@ def decode():
     
     with open(FLAGS.output_path, 'w') as output_file:
       for line in lines:
-        line = ' '.join(line.split()[1:])
         print('Input:')
         print(line)
         ids = dataset.tokenize(line)
         while len(ids) < max_length:
           ids.append(dataset.type_to_ix['_PAD'])
-        fd = {m.inputs: [ids], m.temperature: 1.}
-        o_ids = sess.run(m.generative_output[0].sample_id, feed_dict=fd)[0]
+        feed_dict = {m.inputs: [ids], m.temperature: 1.}
+        o_ids = sess.run(m.generative_output[0].sample_id, feed_dict=feed_dict)
         # Remove the _EOS token
-        output = dataset.untokenize(o_ids, join_str='')[-1] + '\n'
+        output = dataset.untokenize(o_ids[0], join_str='')[-1] + '\n'
         print('Output:')
         print(output)
         output_file.write(output)
@@ -222,6 +226,10 @@ def decode():
 
 def main(_):
   """Called by `tf.app.run` method."""
+  if not FLAGS.model_name:
+    raise ValueError(
+      "Undefined model name. Perhaps you forgot to set the --model_name flag?")
+  
   if FLAGS.decode:
     decode()
   else:
