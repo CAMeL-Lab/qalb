@@ -30,8 +30,8 @@ tf.app.flags.DEFINE_boolean('pyramid_encoder', False, "Set to True to use an"
 tf.app.flags.DEFINE_boolean('use_lstm', False, "Set to False to use GRUs.")
 tf.app.flags.DEFINE_boolean('use_residual', False, "Set to True to add the RNN"
                             " inputs to the outputs.")
-tf.app.flags.DEFINE_boolean('attention', None, "'bahdanau' or 'luong' (none)."
-                            " by default.")
+tf.app.flags.DEFINE_string('attention', None, "'bahdanau' or 'luong' (none)"
+                           " by default.")
 tf.app.flags.DEFINE_float('dropout', 1., "Keep probability for dropout on the"
                           "RNNs' non-recurrent connections.")
 tf.app.flags.DEFINE_float('max_grad_norm', 5., "Clip gradients to this norm.")
@@ -87,8 +87,9 @@ def train():
       bidirectional_mode=FLAGS.bidirectional_mode,
       pyramid_encoder=FLAGS.pyramid_encoder, max_grad_norm=FLAGS.max_grad_norm,
       epsilon=FLAGS.epsilon, use_lstm=FLAGS.use_lstm,
-      use_residual=FLAGS.use_residual, beam_size=1, dropout=FLAGS.dropout,
-      restore=FLAGS.restore, model_name=FLAGS.model_name)
+      use_residual=FLAGS.use_residual, attention=FLAGS.attention, beam_size=1,
+      dropout=FLAGS.dropout, restore=FLAGS.restore,
+      model_name=FLAGS.model_name)
 
   with tf.Session(graph=graph) as sess:
     print("Initializing or restoring model...")
@@ -200,8 +201,8 @@ def decode():
       bidirectional_encoder=FLAGS.bidirectional_encoder,
       bidirectional_mode=FLAGS.bidirectional_mode,
       pyramid_encoder=FLAGS.pyramid_encoder, use_lstm=FLAGS.use_lstm,
-      use_residual=FLAGS.use_residual, beam_size=FLAGS.beam_size,
-      restore=True, model_name=FLAGS.model_name)
+      use_residual=FLAGS.use_residual, attention=FLAGS.attention,
+      beam_size=FLAGS.beam_size, restore=True, model_name=FLAGS.model_name)
   
   with tf.Session(graph=graph) as sess:
     print("Restoring model...")

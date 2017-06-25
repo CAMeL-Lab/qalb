@@ -172,8 +172,7 @@ class Seq2Seq(BaseModel):
     """Performs embedding lookup. Useful as a method for decoder helpers.
        Note this method requires the `embedding_kernel` attribute to be
        declared before being called."""
-    with tf.name_scope('get_embeddings'):
-      return tf.nn.embedding_lookup(self.embedding_kernel, ids)
+    return tf.nn.embedding_lookup(self.embedding_kernel, ids)
   
   
   def rnn_cell(self, num_units=None, attention_mechanism=None):
