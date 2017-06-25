@@ -1,0 +1,308 @@
+====================================================================
+QALB: Qatar Arabic Language Bank - ANLP-ACL 2015 Shared Task Data
+Release 0.8.0 10 April 2015
+====================================================================
+Copyright © 2015 Columbia University and the Carnegie Mellon
+University Qatar. All rights reserved.
+====================================================================
+
+
+1. Introduction
+===============
+
+This README file describes the content of the package.
+The data in this package includes portions of the QALB (Qatar Arabic
+Language Bank) Corpus of Arabic intended for the shared task on
+Automatic Arabic Error Correction. The Shared Task is part of the Workshop on
+Arabic Natural Language Processing at ACL 2015 (ANLP-ACL 2015, http://www.arabic-nlp.net/)
+The QALB project page is http://nlp.qatar.cmu.edu/qalb/.  
+QALB-2015 is an extension of the QALB-2014 shared task that took place in 
+October, 2014 in conjunction with the Arabic Natural Language Processing at 
+EMNLP 2014.  This year, the shared task will include data from native
+speakers (commentaries written in response to Al Jazeera
+ articles) and from non-native Arabic speakers.
+
+QALB was created as part of a collaborative project between Columbia
+University and the Carnegie Mellon University Qatar (CMUQ) funded by
+the Qatar National Research Fund (a member of the Qatar Foundation),
+grant NPRP-4-1058-1-168.  This special release of QALB for the shared task at
+ANLP-ACL 2015 includes (1) commentaries written in response to Al Jazeera
+ articles and (2) L2 essays (texts written by learners of Arabic as a Second
+Language. All of the data includes corrections of language errors in these texts
+by native Arabic speakers at CMUQ. The Al Jazeera data is  the same data that was 
+used for QALB-2014. 
+
+The corpus is distributed under the standard licensing agreement
+available when downloading the corpus. Any questions regarding the
+corpus should be directed to Nizar Habash at:habash@ccls.columbia.edu
+or Behrang Mohit at: behrang@cmu.edu.
+
+If you are using the QALB corpus in your work, please cite the
+following papers:
+
+(1) Ossama Obeid, Wajdi Zaghouani, Behrang Mohit, Nizar Habash, Kemal
+    Oflazer and Nadi Tomeh, 2013.  A Web-based Annotation Framework
+    For Large-Scale Text Correction. In Proceedings of the 6th
+    International Joint Conference on Natural Language Processing
+    (IJCNLP-2013).
+
+(2) Wajdi Zaghouani, Behrang Mohit, Nizar Habash, Ossama Obeid, Nadi
+    Tomeh, Alla Rozovskaya Noura Farra Sarah Alkuhlani and Kemal
+    Oflazer Large-scale Arabic Error Annotation: Guidelines and
+    Framework. In Proceedings of the 9th Conference on Language
+    Resources and Evaluation Conference (LREC-2014).
+
+
+
+2. File List
+============
+
+The package includes four directories:
+
+*** DATA *** The subdirectory data/ contains corpus files in Arabic
+script in UTF-8 encoding.  The current release includes native (Al Jazeera) and L2 data.
+The native corpus has been split into three sets:
+training, development, test (from the QALB-2014 shared task). 
+
+The non-native (L2) data is provided in two sets: training and development.
+Each set comes in three versions:
+
+(1) *.m2 files: Files in the format required by
+                the scorer used for evaluation
+
+(2) *.sent files:  All files with document IDs
+
+(3) *column files: Feature files in column format generated using the MADAMIRA
+                   morphological analysis and disambiguation of Arabic
+                   system (Pasha et al, 2014)
+
+*** DOCUMENTS *** The subdirectory docs/ contains three pdf files:
+
+(1) LREC2014.pdf: The LREC 2014 paper by Zaghouani et al (2014)
+    describing the corpus creation process.
+
+(2) MADAMIRA-UserManual.pdf: The MADAMIRA manual.
+
+(3) QALB-guidelines_0.90.pdf: The annotation guidelines.
+
+
+
+
+*** EVALUATION SCRIPTS *** The subdirectory m2Scripts/ includes
+scripts for running evaluation (Dahlmeier and Ng, 2012).  The
+evaluation script included with this release was used in the
+CoNLL-2013 shared task on grammatical error correction (Ng et al.,
+2013).
+
+To evaluate the performance of your model on the development data
+included with this release, please generate a text file that contains
+the corrected documents one document per line and run the following
+command, where sample.output is the output of your system and sample.m2
+is the sample file with gold annotations included with this
+release:
+    python m2Scripts/removeIDs.py m2Scripts/sample.output
+    >m2Scripts/sample.corrected
+
+    python m2Scripts/m2scorer.py --verbose m2Scripts/sample.corrected
+    m2Scripts/sample.m2 >m2Scripts/sample.score
+
+*** SAMPLE TEST FILES *** The subdirectory sampleTestFiles/ contains sample
+files in the same format that will be used for the released test data.
+
+3. Data Format
+==============
+
+The corpus is distributed in text format.  Each file comes in three
+versions: plain documents with document IDs (*sent); documents with gold annotations (*m2),
+and feature files (*column).
+In the *m2 files, each document is followed by the corrections that refer
+to it. A correction is indicated by start position and end position of
+the original string of tokens, the annotation type, and the
+replacement. The format is done in the spirit of annotation style used
+in the CoNLL-2013 shared task on error correction in English (Ng et
+al., 2013).
+
+
+Below we show an example sentence and its corresponding corrections.
+In this example, the first line (S) is a document token (where a
+document can be a single sentence or a paragraph of multiple sentences
+written on a single line).  The following lines that start with A are
+corrections referring to the document. Each correction line specifies
+three important pieces of information (the fields 'REQUIRED', '-NONE-'
+and '0' should be ignored):
+
+(a) the ID of the token in the document based on its location
+    (starting at 0)
+(b) the type of correction (e.g. edit/merge/add_token_before)
+(c) the replacement, separated by three vertical bars (|||) on each
+    side. Empty correction (i.e. deleting of target token) is
+    indicated by six bars.
+
+
+------------------------------------------- EXAMPLE --------------------------------------------------------
+S اعداد القتلى في صفوف الارهابيين بالمئات و من الصعب حصر اعداد القتلى بشكل دقيق بسبب الحرب الشاملة التي يشنها الجيش العربي السوري في اماكن تواجدهم .
+A 0 1|||edit|||أعداد|||REQUIRED|||-NONE-|||0
+A 4 5|||edit|||الإرهابيين|||REQUIRED|||-NONE-|||0
+A 6 6|||add_token_before|||،|||REQUIRED|||-NONE-|||0
+A 6 8|||merge|||ومن|||REQUIRED|||-NONE-|||0
+A 10 11|||edit|||أعداد|||REQUIRED|||-NONE-|||0
+A 23 24|||edit|||أماكن|||REQUIRED|||-NONE-|||0
+
+Target sentence:
+
+.أعداد القتلى في صفوف الإرهابيين بالمئات، ومن الصعب حصر أعداد القتلى بشكل دقيق بسبب الحرب الشاملة التي يشنها الجيش العربي السوري في أماكن تواجدهم
+--------------------------------------------------------------------------------------------------------------
+
+* The first correction replaces token with ID 0 with the word (ﺄﻋﺩﺍﺩ)
+* The third correction (add_token) specifies an insertion of a comma
+  in front of token with tokenID 6.
+* The fourth correction merges tokens 6 and 7. The complete set of
+  correction type (actions) are listed below.
+
+A sequence of changes that replace tokens indicated in the correction
+lines should produce the resulting target sentence, as shown above
+(note: the target sentence is not part of the input files and is shown
+here for illustration).
+
+
+4. Data format (*column files)
+==============================
+
+We have pre-processed the data with the MADAMIRA morphological
+analyzer version 04092014-1.0-beta (see MADAMIRA-UserManual.pdf in the
+docs/ directory for more detail; also see Pasha et al. (2014)). The
+column files contain one word per line. Each document is followed by
+an empty line. Each word has thirty-three columns of features
+associated with it:
+
+(1) Document ID which specifies the document the word appears in.
+(2) Word ID which specifies the position of the word in the document.
+(3) The word (e.g., وللأبد wll>bd) [example in Arabic script and in
+    the Buckwalter transliteration].
+
+The rest of the features are the output of the MADAMIRA system which
+disambiguates automatically in context. MADAMIRA determines the word
+lemma, diacritization, English gloss and tokenization in addition to
+different types of part-of-speech tags and morphological features. The
+tokenization we chose for the data is the Penn Arabic Treebank
+Tokenization (PATB) tokenization which splits all word clitics except
+for the definite article Al.  The tokens are joined with a + delimiter
+in this file.
+
+(4) The undiacritized word in PATB tokenization (e.g., و+ل+الأبد w+l+Al>bd)
+(5) Same as (4) but Alif/Ya normalized (e.g., و+ل+الابد w+l+AlAbd)
+(6) The PATB token lemmas (e.g., وَ+لِ+أَبَد wa+li+>abad)
+(7) CATiB POS tag (e.g., PRT+PRT+NOM)
+(8) Kulick POS tag (e.g., CC+IN+DT+NN) 
+(9) Buckwalter POS tag (e.g., CONJ+PREP+DET+NOUN+CASE_DEF_GEN)
+(10) MADAMIRA score for this analysis (e.g., *0.893910 )
+(11) Fully diacritized word (e.g. وَلِلأَبَدِ walil>abadi)
+(12) Lemma (e.g., ﺄَﺑَﺩ_1 >abad_1)
+(13) Buckwalter tag with specified morphemes (e.g.,
+     wa/CONJ+li/PREP+Al/DET+>abad/NOUN+i/CASE_DEF_GEN)
+(14) Undiacritized form of (11) (e.g., ﻮﻟﻸﺑﺩ wll>bd) For some common
+     classes of spelling errors (e.g., Alif hamzation), this is the
+     correct answer. In this example, the word is already correct.
+(15) Prefix gloss (e.g., and_+_to/for_+_the)
+(16) Stem gloss (e.g., eternity;forever)
+(17) Suffix gloss (e.g., [def.gen.])
+(18) MADAMIRA core POS tag (e.g., noun)
+(19) Proclitic 3 (typically interrogative article) (e.g., 0 -> not present)
+(20) Proclitic 2 (e.g., wa_conj)
+(21) Proclitic 1 (e.g., li_prep)
+(22) Proclitic 0 (e.g., Al_det)
+(23) Person (a feature of verbs; na in this example)
+(24) Aspect (a feature of verbs; na in this example)
+(25) Voice (a feature of verbs; na in this example)
+(26) Mood (a feature of verbs; na in this example)
+(27) Gender (m in this example -> masculine)
+(28) Number (s in this example -> singular)
+(29) State (d in this example -> definite)
+     Note: the gender and number features are what Habash (2010) calls
+     form-based features not functional features.
+(30) Case (g in this example -> genitive)
+(31) Enclitic 0 (typically a pronoun that is possessive or direct
+     object; but in this example, it is not present -> 0)
+(32) Lexical lookup category: This feature provides feedback from the
+     analyzer on how the word was matched to the databases: lex means
+     it was an exact lexicon match, spvar means it is a spelling
+     variant. Other values include punc (punctuation) and digit.
+(33) Stem of the word as it appears in the lexical databases used in
+     MADAMIRA (e.g., أَبَد >abad)
+
+For more information on these features and tag sets, see Habash (2010).
+
+
+5. Complete set of correction types (actions)
+==============================================
+
+The annotations were carried out as a set of actions and include the
+following changes:
+
+(1) Add_before -- insert a token in front of another token
+(2) Add_after -- insert a token after another token (rarely used)
+(2) Merge -- merge multiple tokens
+(3) Split -- split a token into multiple tokens
+(4) Delete -- delete a token
+(5) Edit - replace a token with a different token
+(6) Move - move a token to a different location in the sentence
+(7) Other - a complex action that may involve multiple tokens
+
+The annotation guidelines can be found in the doc/ directory
+
+
+6. Submission format and instructions
+=====================================
+
+*** Submission Instructions ***
+
+All those who registered to participate in the Shared Task
+will receive an email message on May 16, 2015 with specific instructions on how
+to download the test set and how to send the automatic correction
+of it. The information will also be available at the shared task group
+(https://groups.google.com/forum/#!forum/qalb-shared-task).
+
+*** Submission Format ***
+
+The test data will be provided to the participants in two files:
+test.column and test.sent (see sample test files in sampleTestFiles/:
+testSample.column and testSample.sent). These files are in the
+same format as the development and training data described above.
+Important: test.m2 file (the gold answers) will not be provided.
+
+The participants will need to submit a file that contains corrected
+documents one document per line. The format is the same as the file
+sampleTestFiles/testSample.sent. Note that the file to be
+submitted needs to specify document ID for each sentence, in the same
+way as the *sent files.
+
+Each participating team can submit up to three systems. Further instructions
+on file names and where to send the submissions will be provided to the
+participants.
+
+
+
+References:
+===========
+
+(1) H. T. Ng, S. M. Wu, Y. Wu, Ch. Hadiwinoto, J. Tetreault. The
+    CoNLL-2013 Shared Task on Grammatical Error Correction. In
+    Proceedings of the CoNLL-2013 shared task.
+
+(2) D. Dahlmeier and H. T. Ng. Better Evaluation for Grammatical Error
+    Correction. In Proceedings of NAACL (2012).
+
+(3) A. Pasha, M. Al-Badrashiny, A. E. Kholy, R. Eskander, M. Diab,
+    N. Habash, M. Pooleery, O. Rambow, and R. Roth. MADAMIRA: A fast,
+    comprehensive tool for morphological analysis and disambiguation
+    of Arabic. In In Proceedings of LREC, Reykjavik, Iceland, 2014.
+
+(4) N. Habash. Introduction to Arabic Natural Language Processing,
+    Synthesis Lectures on Human Language Technologies, Graeme Hirst,
+    editor. Morgan & Claypool Publishers. 187 pages, 2010.
+
+
+====================================================================
+Copyright © 20115 Columbia University and the Carnegie Mellon
+University Qatar. All rights reserved.
+====================================================================
