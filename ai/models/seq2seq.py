@@ -109,6 +109,11 @@ class Seq2Seq(BaseModel):
     self.temperature = tf.placeholder_with_default(
       1., name='temperature', shape=[])
     
+    # Sequence lengths - used throughout model
+    with tf.name_scope('input_lengths'):
+      self.input_lengths = tf.reduce_sum(
+        tf.sign(tf.abs(sequence_batch - self.pad_id)), reduction_indices=1)
+    
     # Prepare training decoder inputs
     with tf.name_scope('train_decoder_inputs'):
       decoder_ids = tf.concat(
@@ -205,24 +210,15 @@ class Seq2Seq(BaseModel):
     return cell
   
   
-  def get_sequence_length(self, sequence_batch):
-    """Given a 2D batch of input sequences, return a vector with the lengths
-       of every sequence excluding the paddings."""
-    with tf.name_scope('get_sequence_length'):
-      return tf.reduce_sum(
-        tf.sign(tf.abs(sequence_batch - self.pad_id)), reduction_indices=1)
-  
-  
   def build_encoder(self, encoder_input):
     """Build the RNN stack for the encoder, depending on the initial config."""
-    input_lengths = self.get_sequence_length(self.inputs)
     
     # We make only the first encoder layer bidirectional to capture the context
     # (Wu et al., https://arxiv.org/pdf/1609.08144.pdf)
     if self.bidirectional_encoder:
       (encoder_fw_out, encoder_bw_out), _ = tf.nn.bidirectional_dynamic_rnn(
         self.rnn_cell(), self.rnn_cell(), encoder_input, dtype=tf.float32,
-        sequence_length=input_lengths)
+        sequence_length=self.input_lengths)
       
       # Postprocess the bidirectional output according to the initial config
       if self.bidirectional_mode == 'add':
@@ -236,7 +232,7 @@ class Seq2Seq(BaseModel):
     else:
       encoder_output, _ = tf.nn.dynamic_rnn(
         self.rnn_cell(), encoder_input, dtype=tf.float32,
-        sequence_length=input_lengths)
+        sequence_length=self.input_lengths)
     
     # Only for deep RNN architectures
     if self.rnn_layers > 1:
@@ -258,13 +254,16 @@ class Seq2Seq(BaseModel):
           [self.rnn_cell() for _ in xrange(self.rnn_layers - 1)])
         encoder_output, _ = tf.nn.dynamic_rnn(
           encoder_cells, encoder_output, dtype=tf.float32,
-          sequence_length=input_lengths)
+          sequence_length=self.input_lengths)
     
     return tf.contrib.seq2seq.tile_batch(encoder_output, self.beam_size)
   
   
   def build_decoder(self, encoder_output, decoder_input):
     """Build the decoder RNN stack and the final prediction layer."""
+    
+    # TODO: add the pyramid lengths if applicable
+    final_encoder_lengths = self.input_lengths
     
     # The first RNN is wrapped with the attention mechanism
     # TODO: make Luong attention actually follow the computational steps
@@ -273,10 +272,12 @@ class Seq2Seq(BaseModel):
     attention_mechanism = None
     if self.attention == 'bahdanau':
       attention_mechanism = tf.contrib.seq2seq.BahdanauAttention(
-        self.embedding_size, encoder_output)
+        self.embedding_size, encoder_output,
+        memory_sequence_length=self.input_lengths)
     elif self.attention == 'luong':
       attention_mechanism = tf.contrib.seq2seq.LuongAttention(
-        self.embedding_size, encoder_output)
+        self.embedding_size, encoder_output,
+        memory_sequence_length=self.input_lengths)
     
     decoder_cell = self.rnn_cell(attention_mechanism=attention_mechanism)
     

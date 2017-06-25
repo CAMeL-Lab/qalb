@@ -49,6 +49,7 @@ tf.app.flags.DEFINE_integer('num_steps_per_eval', 20, "Number of steps to wait"
                             " before running the graph with the dev set.")
 tf.app.flags.DEFINE_integer('num_steps_per_save', 100, "Number of steps"
                             " before saving the trainable variables.")
+tf.app.flags.DEFINE_string('extension', '', "Extensions of data files.")
 tf.app.flags.DEFINE_string('decode', None, "Set to a path to run on a file.")
 tf.app.flags.DEFINE_string('output_path', os.path.join('output', 'result.txt'),
                            "Name of the output file with decoding results.")
@@ -66,7 +67,7 @@ def train():
   dataset = CharQALB(
     'QALB', batch_size=FLAGS.batch_size,
     max_input_length=FLAGS.max_sentence_length,
-    max_label_length=FLAGS.max_sentence_length)
+    max_label_length=FLAGS.max_sentence_length, extension=FLAGS.extension)
   
   print("Building computational graph...")
   graph = tf.Graph()
@@ -183,7 +184,8 @@ def decode():
   print("Building dynamic word-level QALB data...")
   dataset = CharQALB(
     'QALB', batch_size=1,
-    max_input_length=max_length, max_label_length=max_length)
+    max_input_length=max_length, max_label_length=max_length,
+    extension=FLAGS.extension)
   
   print("Building computational graph...")
   graph = tf.Graph()
