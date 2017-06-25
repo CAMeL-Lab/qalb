@@ -4,6 +4,7 @@
    mistakes made by students of Arabic as a foreign language."""
 
 from abc import ABCMeta, abstractmethod
+import io
 import os
 
 from six.moves import xrange
@@ -72,7 +73,7 @@ class BaseQALB(BaseDataset):
     train_labels = self.maybe_flatten_gold(
       os.path.join(data_dir, self.file_root + '.train')  # method completes it
     )
-    with open(train_input_path) as train_file:
+    with io.open(train_input_path, encoding='utf-8') as train_file:
       self.train_pairs = self.make_pairs(train_file.readlines(), train_labels)
     self.max_train_lengths = max_length_seq(self.train_pairs)
     # Prepare validation data
@@ -82,7 +83,7 @@ class BaseQALB(BaseDataset):
     valid_labels = self.maybe_flatten_gold(
       os.path.join(data_dir, self.file_root + '.dev')
     )
-    with open(valid_input_path) as valid_file:
+    with io.open(valid_input_path, encoding='utf-8') as valid_file:
       self.valid_pairs = self.make_pairs(valid_file.readlines(), valid_labels)
     self.max_valid_lengths = max_length_seq(self.valid_pairs)
   
@@ -96,16 +97,16 @@ class BaseQALB(BaseDataset):
     m2_path = file_root + '.m2' + self.extension
     gold_path = file_root + '.gold' + self.extension
     if not force and os.path.exists(gold_path):
-      with open(gold_path) as gold_file:
+      with io.open(gold_path, encoding='utf-8') as gold_file:
         return gold_file.readlines()
-    with open(m2_path) as m2_file:
+    with io.open(m2_path, encoding='utf-8') as m2_file:
       raw_m2_data = m2_file.read().split('\n\n')[:-1]  # remove last empty str
     result = []
     for raw_pair in raw_m2_data:
       text = raw_pair.split('\n')[0][2:]  # remove the S marker
       corrections = map(parse_correction, raw_pair.split('\n')[1:])
       result.append(apply_corrections(text, corrections))
-    with open(gold_path) as gold_file:
+    with io.open(gold_path, encoding='utf-8') as gold_file:
       gold_file.writelines(result)
     return result
   
