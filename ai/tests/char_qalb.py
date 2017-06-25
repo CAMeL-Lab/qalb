@@ -1,6 +1,6 @@
 """Testing setup for QALB."""
 
-from __future__ import division, print_function
+from __future__ import division, print_function, unicode_literals
 
 import os
 import re
@@ -10,7 +10,7 @@ import numpy as np
 import tensorflow as tf
 
 from ai.datasets import CharQALB
-from ai.models import ExperimentalSeq2Seq
+from ai.models import Seq2Seq
 
 
 ### HYPERPARAMETERS
@@ -72,7 +72,7 @@ def train():
   graph = tf.Graph()
   with graph.as_default():
     # pylint: disable=invalid-name
-    m = ExperimentalSeq2Seq(
+    m = Seq2Seq(
       num_types=dataset.num_types(),
       max_encoder_length=FLAGS.max_sentence_length,
       max_decoder_length=FLAGS.max_sentence_length,
@@ -189,7 +189,7 @@ def decode():
   with graph.as_default():
     # TODO: remove constants dependent on dataset instance; save them in model.
     # pylint: disable=invalid-name
-    m = ExperimentalSeq2Seq(
+    m = Seq2Seq(
       num_types=dataset.num_types(),
       max_encoder_length=max_length, max_decoder_length=max_length,
       pad_id=dataset.type_to_ix['_PAD'],
