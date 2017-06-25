@@ -13,7 +13,7 @@ from ai.models import BaseModel
 class NextGram(BaseModel):
   """Language model architecture to predict the next n-gram."""
   
-  def __init__(self, num_types=0, batch_size=20,
+  def __init__(self, lr=1e-3, lr_decay=1., num_types=0, batch_size=20,
                num_steps=40, embedding_size=100, rnn_layers=2,
                max_grad_norm=5., rnn_cell=tf.contrib.rnn.LSTMBlockCell, **kw):
     """Keyword arguments:
@@ -26,6 +26,7 @@ class NextGram(BaseModel):
        `rnn_layers`: the number of RNN cells to be stacked,
        `max_grad_norm`: gradient norm clipping value to avoid exploding values,
        `rnn_cell`: the RNN class to be used (e.g. LSTM, GRU)."""
+    self.lr_decay = lr_decay
     self.num_types = num_types
     self.batch_size = batch_size
     self.num_steps = num_steps
@@ -33,6 +34,8 @@ class NextGram(BaseModel):
     self.rnn_layers = rnn_layers
     self.max_grad_norm = max_grad_norm
     self.rnn_cell = rnn_cell
+    self.lr = tf.Variable(
+      lr, trainable=False, dtype=tf.float32, name='learning_rate')
     super(NextGram, self).__init__(**kw)
   
   def build_graph(self):
