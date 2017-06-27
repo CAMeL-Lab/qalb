@@ -1,6 +1,6 @@
 # AI
+data/
 output/
-qalb_unused/
 
 # Python
 *.pyc
