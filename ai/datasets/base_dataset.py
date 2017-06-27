@@ -1,31 +1,30 @@
 """TODO: add descriptive module docstring."""
 
-from abc import ABCMeta
+from abc import abstractmethod
 import random
 
 from six.moves import xrange
 
+from ai.utils import abstractclass
 
-# TODO: make this class more abstract and create abstract subclasses with more
-# specific methods. For instance, `make_pairs` here is implemented for
-# language models, and this class is used for other tasks like seq2seq.
+
+@abstractclass
 class BaseDataset(object):
   """Abstract class for parsing text datasets. Includes defaults for special
      types, tokenizing and untokenizing methods, dataset preparation, and
-     batch generation."""
-  __metaclass__ = ABCMeta
+     batch generation.
+     
+     Note: if the dataset is expected to remain unchanged, it is good practice
+     to use the `num_types` method once to see the number of types and add that
+     value to the `max_types` keyword argument in the constructor to avoid
+     adding out-of-vocabulary tokens and instead mapping them to '_UNK'."""
     
-  def __init__(self, max_types=None, batch_size=20, num_steps=50, gram_order=1,
-               shuffle=False):
+  def __init__(self, max_types=None, gram_order=1, shuffle=False):
     """Keyword arguments:
        `max_types`: an upper bound for the vocabulary size (no bound if falsy),
-       `batch_size`: number of lines per training batch,
-       `num_steps`: specifies the max length of a line,
        `gram_order`: number of original types in the n-gram,
        `shuffle`: whether to shuffle the list of generated triples."""
     self.max_types = max_types
-    self.batch_size = batch_size
-    self.num_steps = num_steps
     self.gram_order = gram_order
     self.shuffle = shuffle
     self.train_pairs = []
@@ -66,33 +65,29 @@ class BaseDataset(object):
     return join_str.join([self.ix_to_type[t][0] for t in tokens
                           if include_special or t > 3])
   
-  def make_pairs(self, lines, train_data_ratio=.7):
-    """Given a list `lines` containing lists of ids, return a list of input
-       and target(s) pairs. The percentage of the data used for training can
-       be specified with `train_data_ratio`. Override if necessary."""
-    make_pairs = lambda line: (line[:-1], line[1:])
-    pairs = map(make_pairs, lines)
-    num_train_pairs = int(len(lines) * train_data_ratio)
-    self.train_pairs = pairs[:num_train_pairs]
-    self.valid_pairs = pairs[num_train_pairs:]
+  @abstractmethod
+  def make_pairs(self, *a, **kw):
+    """This method must be overriden and is meant to fill the `train_pairs`
+       and `valid_pairs` attributes."""
+    pass
   
-  def get_batches(self):
+  def get_batches(self, batch_size):
     """Groups the triples into batches, and allows randomized order."""
     if self.shuffle:
       random.shuffle(self.train_pairs)
       random.shuffle(self.valid_pairs)
     # Put the triples into batches.
     train_batches = [
-      self.train_pairs[i:i+self.batch_size]
-      for i in xrange(0, len(self.train_pairs), self.batch_size)
+      self.train_pairs[i:i+batch_size]
+      for i in xrange(0, len(self.train_pairs), batch_size)
     ]
     valid_batches = [
-      self.valid_pairs[i:i+self.batch_size]
-      for i in xrange(0, len(self.valid_pairs), self.batch_size)
+      self.valid_pairs[i:i+batch_size]
+      for i in xrange(0, len(self.valid_pairs), batch_size)
     ]
     # Prune batches with invalid number of inputs
-    train_batches = [b for b in train_batches if len(b) == self.batch_size]
-    valid_batches = [b for b in valid_batches if len(b) == self.batch_size]
+    train_batches = [batch for batch in train_batches if len(b) == batch_size]
+    valid_batches = [batch for batch in valid_batches if len(b) == batch_size]
     return zip(train_batches, valid_batches)
   
   def num_types(self):
@@ -102,4 +97,3 @@ class BaseDataset(object):
   def num_pairs(self):
     """Return the number of train and valid example pairs in the dataset."""
     return (len(self.train_pairs), len(self.valid_pairs))
-  

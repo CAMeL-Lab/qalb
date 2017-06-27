@@ -3,15 +3,17 @@
    abstractions that are desirable for all the other models; no matter what
    their functionality or computational graphs are."""
 
-from abc import ABCMeta, abstractmethod
+from abc import abstractmethod
 import os
 
 import tensorflow as tf
 
+from ai.utils import abstractclass
 
+
+@abstractclass
 class BaseModel(object):
   """Model abstraction to handle restoring variables and summary writers."""
-  __metaclass__ = ABCMeta
   
   def __init__(self, restore=False, model_name='default'):
     """The constructor builds the model's computational graph. Thus, it should
@@ -65,5 +67,4 @@ class BaseModel(object):
     sess = tf.get_default_session()
     self.saver.save(
       sess, os.path.join('output', self.model_name, filename),
-      global_step=self.global_step.eval()
-    )
+      global_step=sess.run(self.global_step))
