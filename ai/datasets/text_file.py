@@ -3,10 +3,11 @@
 from six.moves import xrange
 
 from ai.datasets import BaseDataset
+from ai.utils import split_train_test
 
 
 class TextFile(BaseDataset):
-  """Reader for generic text files."""
+  """Reader for generic text files. Creates character-level LM pairs."""
   
   def __init__(self, filepath, **kw):
     super(TextFile, self).__init__(**kw)
@@ -22,3 +23,8 @@ class TextFile(BaseDataset):
     
     del raw_data  # just for memory efficiency
     self.make_pairs(data)
+  
+  
+  def make_pairs(self, lines):
+    pairs = [line[:-1], line[1:] for line in lines]
+    self.train_pairs, self.valid_pairs = split_train_test(pairs)

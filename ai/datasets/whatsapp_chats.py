@@ -3,13 +3,16 @@
 import re
 
 from ai.datasets import BaseDataset
+from ai.utils import split_train_test
 
 
 class WhatsAppChats(BaseDataset):
-  """Reader for WhastApp exported chat history text files."""
+  """Reader for WhastApp exported chat history text files. Creates
+     character-level LM pairs."""
   
   def __init__(self, filename='rafi.txt', **kw):
     super(WhatsAppChats, self).__init__(**kw)
+    
     with open('data/whatsapp/' + filename) as chat_history_file:
       raw_lines = chat_history_file.readlines()
     
@@ -29,3 +32,8 @@ class WhatsAppChats(BaseDataset):
     
     del raw_lines  # just for memory efficiency
     self.make_pairs(lines)
+  
+  
+  def make_pairs(self, lines):
+    pairs = [line[:-1], line[1:] for line in lines]
+    self.train_pairs, self.valid_pairs = split_train_test(pairs)

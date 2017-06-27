@@ -26,6 +26,7 @@ def parse_correction(correction_line):
   start_id, end_id = map(int, correction_line[0].split())
   return (start_id, end_id, correction_line[1], correction_line[2])
 
+
 def apply_corrections(text, corrections):
   """Given a text string and a list of corrections in the format returned by
      the `parse_correction` method, return a string of corrected text. Note
@@ -36,6 +37,7 @@ def apply_corrections(text, corrections):
     # All corrections can be handled with this line (neat!!!)
     words = words[:start] + content.split() + words[end:]
   return ' '.join(words) + '\n'
+
 
 def max_length_seq(pairs):
   """Get the maximum sequence length of the examples in the provided pairs."""

@@ -1,21 +1,24 @@
-"""Reader for JSON Trump tweets."""
+"""Reader for JSON Trump tweet archive."""
 
 import json
 
 from six.moves import xrange
 
 from ai.datasets import BaseDataset
+from ai.utils import split_train_test
 
 
 class TrumpTweets(BaseDataset):
-  """Reader for JSON Trump tweets."""
+  """Reader for JSON Trump tweet archive. Creates character-level LM pairs.
+     The original data files can be found here:
+     https://github.com/bpb27/trump-tweet-archive/tree/master/data/realdonaldtrump"""
   
   def __init__(self, **kw):
     super(TrumpTweets, self).__init__(**kw)
     
     tweets = []
     max_chars = self.num_steps + self.gram_order - 1
-    for i in xrange(2009, 2018):
+    for i in xrange(2009, 2017 + 1):
       
       with open('data/trump_tweets/condensed_{}.json'.format(i)) as json_file:
         file_data = json.load(json_file)
@@ -28,4 +31,10 @@ class TrumpTweets(BaseDataset):
           tweet.append(self.type_to_ix['_PAD'])
         tweets.append(tweet)
     
+    del file_data  # just for memory efficiency
     self.make_pairs(tweets)
+  
+  
+  def make_pairs(self, tweets):
+    pairs = [tweet[:-1], tweet[1:] for tweet in tweets]
+    self.train_pairs, self.valid_pairs = split_train_test(pairs)
