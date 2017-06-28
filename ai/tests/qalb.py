@@ -1,6 +1,6 @@
-"""Testing setup for QALB."""
+"""Testing setup for QALB shared task."""
 
-from __future__ import division, print_function, unicode_literals
+from __future__ import division, print_function
 
 import os
 import re
@@ -14,10 +14,11 @@ from ai.models import Seq2Seq
 
 
 ### HYPERPARAMETERS
-tf.app.flags.DEFINE_float('adam_lr', 5e-4, "Learning rate.")
-tf.app.flags.DEFINE_float('adam_lr_decay', .5, "Learning rate decay.")
-tf.app.flags.DEFINE_float('gd_lr', .1, "Learning rate.")
-tf.app.flags.DEFINE_float('gd_lr_decay', .5, "Learning rate decay.")
+tf.app.flags.DEFINE_float('adam_lr', 5e-4, "Adam learning rate.")
+tf.app.flags.DEFINE_float('adam_lr_decay', .5, "Adam learning rate decay.")
+tf.app.flags.DEFINE_float('gd_lr', .1, "Gradient descent learning rate.")
+tf.app.flags.DEFINE_float('gd_lr_decay', .5, "Gradient descent learning rate"
+                          " decay.")
 tf.app.flags.DEFINE_integer('batch_size', 20, "Batch size.")
 tf.app.flags.DEFINE_integer('embedding_size', 256, "Number of hidden units.")
 tf.app.flags.DEFINE_integer('rnn_layers', 2, "Number of RNN layers.")
@@ -101,7 +102,7 @@ def train():
       
       # Gradient descent and backprop
       # TODO: add lr decays
-      train_inputs, train_labels = dataset.get_batch()
+      train_inputs, train_labels = dataset.get_batch(FLAGS.batch_size)
       train_fd = {m.inputs: train_inputs, m.labels: train_labels}
       
       if FLAGS.switch_to_sgd and step >= FLAGS.switch_to_sgd:
@@ -123,7 +124,8 @@ def train():
           feed_dict=train_fd
         )
         # Evaluate and show samples on validation set
-        valid_inputs, valid_labels = dataset.get_batch(draw_from_valid=True)
+        valid_inputs, valid_labels = dataset.get_batch(
+          FLAGS.batch_size, draw_from_valid=True)
         valid_fd = {m.inputs: valid_inputs, m.labels: valid_labels}
         valid_ppx, valid_output, valid_gen_output, valid_summary = sess.run(
           [m.perplexity, m.output, m.generative_output, m.summary_op],
@@ -155,20 +157,6 @@ def train():
         m.save()
         print("Model saved. Resuming training...")
         sys.stdout.flush()
-
-
-def max_repetitions(s, threshold=8):
-  """Find the largest contiguous repeating substring in s, repeating itself at
-     least `threshold` times. Example:
-     >>> max_repetitions("blablasbla")  # returns ['bla', 2]."""
-  repetitions_re = re.compile(r'(.+?)\1{%d,}' % threshold)
-  max_repeated = None
-  for match in repetitions_re.finditer(s):
-    new_repeated = [match.group(1), len(match.group(0))/len(match.group(1))]
-    # pylint: disable=unsubscriptable-object
-    if max_repeated is None or max_repeated[1] < new_repeated[1]:
-      max_repeated = new_repeated
-  return max_repeated
 
 
 def decode():
