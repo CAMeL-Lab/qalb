@@ -6,6 +6,7 @@ from six.moves import xrange
 import tensorflow as tf
 # pylint: disable=no-name-in-module
 from tensorflow.python.layers.core import Dense
+from tensorflow.python.ops.init_ops import Initializer
 
 from ai.models import BaseModel
 
@@ -22,7 +23,8 @@ class Seq2Seq(BaseModel):
                pad_id=0, eos_id=1, go_id=2,
                adam_lr=1e-3, adam_lr_decay=1.,
                gd_lr=.1, gd_lr_decay=1.,
-               batch_size=32, embedding_size=128, rnn_layers=2,
+               batch_size=32, embedding_size=128, train_embeddings=True,
+               default_embedding_matrix=None, rnn_layers=2,
                bidirectional_encoder=False, bidirectional_mode='add',
                pyramid_encoder=False, use_lstm=False, use_residual=False,
                attention=None, feed_inputs=False, dropout=1.,
@@ -40,6 +42,9 @@ class Seq2Seq(BaseModel):
        `gd_lr_decay`: learning rate decay for gradient descent optimizer,
        `batch_size`: minibatch size,
        `embedding_size`: integer number of hidden units,
+       `train_embeddings`: whether to do backprop on the embeddings,
+       `default_embedding_matrix`: if None, set to a random uniform
+        distribution with mean 0 and variance 1,
        `rnn_layers`: number of RNN layers for the encoder and decoder,
        `bidirectional_encoder`: whether to use a bidirectional encoder RNN,
        `bidirectional_mode`: string for the bidirectional RNN architecture:
@@ -73,6 +78,8 @@ class Seq2Seq(BaseModel):
     self.gd_lr_decay = gd_lr_decay
     self.batch_size = batch_size
     self.embedding_size = embedding_size
+    self.train_embeddings = train_embeddings
+    self.default_embedding_matrix = default_embedding_matrix
     self.rnn_layers = rnn_layers
     self.bidirectional_encoder = bidirectional_encoder
     self.bidirectional_mode = bidirectional_mode
@@ -112,7 +119,7 @@ class Seq2Seq(BaseModel):
     # Sequence lengths - used throughout model
     with tf.name_scope('input_lengths'):
       self.input_lengths = tf.reduce_sum(
-        tf.sign(tf.abs(sequence_batch - self.pad_id)), reduction_indices=1)
+        tf.sign(tf.abs(self.inputs - self.pad_id)), reduction_indices=1)
     
     # Prepare training decoder inputs
     with tf.name_scope('train_decoder_inputs'):
@@ -121,10 +128,19 @@ class Seq2Seq(BaseModel):
     
     # Embedding matrix
     with tf.variable_scope('embeddings'):
-      sqrt3 = 3 ** .5  # Uniform(-sqrt3, sqrt3) has variance 1
+      if self.default_embedding_matrix is not None:
+        if isinstance(self.default_embedding_matrix, Initializer):
+          initializer = self.default_embedding_matrix
+        else:
+          initializer = tf.constant_initializer(self.default_embedding_matrix)
+      else:
+        sq3 = 3 ** .5  # Uniform(-sqrt3, sqrt3) has variance 1
+        # pylint: disable=redefined-variable-type
+        initializer = tf.random_uniform_initializer(minval=-sq3, maxval=sq3)
+      
       self.embedding_kernel = tf.get_variable(
         'kernel', [self.num_types, self.embedding_size],
-        initializer=tf.random_uniform_initializer(minval=-sqrt3, maxval=sqrt3))
+        trainable=self.train_embeddings, initializer=initializer)
     
     # Look up the embeddings for the encoder and decoder inputs
     encoder_input = self.get_embeddings(self.inputs)
@@ -239,6 +255,7 @@ class Seq2Seq(BaseModel):
       
       if self.pyramid_encoder:
         for i in xrange(1, self.rnn_layers):
+          # TODO: inspect this
           # Concatenate adjacent pairs and reshape them to their original size
           eo_sh = encoder_output.get_shape()
           concat_shape = map(int, [eo_sh[0], eo_sh[1] / 2, eo_sh[2] * 2])
@@ -262,8 +279,10 @@ class Seq2Seq(BaseModel):
   def build_decoder(self, encoder_output, decoder_input):
     """Build the decoder RNN stack and the final prediction layer."""
     
-    # TODO: add the pyramid lengths if applicable
     final_encoder_lengths = self.input_lengths
+    if self.pyramid_encoder and self.rnn_layers > 1:
+      time_steps = int(self.max_encoder_length / (2 ** (self.rnn_layers - 1)))
+      final_encoder_lengths = tf.ones([self.batch_size, time_steps])
     
     # The first RNN is wrapped with the attention mechanism
     # TODO: make Luong attention actually follow the computational steps
@@ -273,11 +292,11 @@ class Seq2Seq(BaseModel):
     if self.attention == 'bahdanau':
       attention_mechanism = tf.contrib.seq2seq.BahdanauAttention(
         self.embedding_size, encoder_output,
-        memory_sequence_length=self.input_lengths)
+        memory_sequence_length=final_encoder_lengths)
     elif self.attention == 'luong':
       attention_mechanism = tf.contrib.seq2seq.LuongAttention(
         self.embedding_size, encoder_output,
-        memory_sequence_length=self.input_lengths)
+        memory_sequence_length=final_encoder_lengths)
     
     decoder_cell = self.rnn_cell(attention_mechanism=attention_mechanism)
     
