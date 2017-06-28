@@ -1,3 +1,5 @@
+# pylint: skip-file
+
 """Reader for generic text files."""
 
 from six.moves import xrange
@@ -26,5 +28,5 @@ class TextFile(BaseDataset):
   
   
   def make_pairs(self, lines):
-    pairs = [line[:-1], line[1:] for line in lines]
+    pairs = [(line[:-1], line[1:]) for line in lines]
     self.train_pairs, self.valid_pairs = split_train_test(pairs)

@@ -1,6 +1,5 @@
 """TODO: add descriptive module docstring."""
 
-from abc import abstractmethod
 import random
 
 from six.moves import xrange
@@ -65,12 +64,6 @@ class BaseDataset(object):
     return join_str.join([self.ix_to_type[t][0] for t in tokens
                           if include_special or t > 3])
   
-  @abstractmethod
-  def make_pairs(self, *a, **kw):
-    """This method must be overriden and is meant to fill the `train_pairs`
-       and `valid_pairs` attributes."""
-    pass
-  
   def get_batches(self, batch_size):
     """Groups the triples into batches, and allows randomized order."""
     if self.shuffle:
@@ -86,8 +79,8 @@ class BaseDataset(object):
       for i in xrange(0, len(self.valid_pairs), batch_size)
     ]
     # Prune batches with invalid number of inputs
-    train_batches = [batch for batch in train_batches if len(b) == batch_size]
-    valid_batches = [batch for batch in valid_batches if len(b) == batch_size]
+    train_batches = [b for b in train_batches if len(b) == batch_size]
+    valid_batches = [b for b in valid_batches if len(b) == batch_size]
     return zip(train_batches, valid_batches)
   
   def num_types(self):

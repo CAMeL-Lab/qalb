@@ -1,3 +1,5 @@
+# pylint: skip-file
+
 """Reader for JSON Trump tweet archive."""
 
 import json
@@ -36,5 +38,5 @@ class TrumpTweets(BaseDataset):
   
   
   def make_pairs(self, tweets):
-    pairs = [tweet[:-1], tweet[1:] for tweet in tweets]
+    pairs = [(tweet[:-1], tweet[1:]) for tweet in tweets]
     self.train_pairs, self.valid_pairs = split_train_test(pairs)

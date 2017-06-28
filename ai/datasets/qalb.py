@@ -125,12 +125,12 @@ class BaseQALB(BaseDataset):
     label_ids.append(self.type_to_ix['_EOS'])
     return input_ids, label_ids
   
-  def get_batch(self, draw_from_valid=False):
+  def get_batch(self, batch_size, draw_from_valid=False):
     """Draw random examples and pad them to the largest sequence drawn.
        The batch can be drawn from the validation set if the keyowrd argument
        `draw_from_valid` is set to True."""
     batch = []
-    while len(batch) < self.batch_size:
+    while len(batch) < batch_size:
       if draw_from_valid:
         sequence = self.valid_pairs[np.random.randint(len(self.valid_pairs))]
       else:
@@ -142,7 +142,7 @@ class BaseQALB(BaseDataset):
                  or len(sequence[1]) <= self.max_label_length
       if input_ok and label_ok:
         batch.append(sequence)
-    for i in xrange(self.batch_size):
+    for i in xrange(batch_size):
       max_input_length = self.max_input_length
       max_label_length = self.max_label_length
       if max_input_length is None or max_label_length is None:

@@ -1,3 +1,5 @@
+# pylint: skip-file
+
 """Reader for WhastApp exported chat history text files."""
 
 import re
@@ -35,5 +37,5 @@ class WhatsAppChats(BaseDataset):
   
   
   def make_pairs(self, lines):
-    pairs = [line[:-1], line[1:] for line in lines]
+    pairs = [(line[:-1], line[1:]) for line in lines]
     self.train_pairs, self.valid_pairs = split_train_test(pairs)
