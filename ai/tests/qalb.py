@@ -3,7 +3,6 @@
 from __future__ import division, print_function
 
 import os
-import re
 import sys
 
 import numpy as np
@@ -15,9 +14,9 @@ from ai.models import Seq2Seq
 
 ### HYPERPARAMETERS
 tf.app.flags.DEFINE_float('adam_lr', 5e-4, "Adam learning rate.")
-tf.app.flags.DEFINE_float('adam_lr_decay', .5, "Adam learning rate decay.")
+tf.app.flags.DEFINE_float('adam_lr_decay', 1., "Adam learning rate decay.")
 tf.app.flags.DEFINE_float('gd_lr', .1, "Gradient descent learning rate.")
-tf.app.flags.DEFINE_float('gd_lr_decay', .5, "Gradient descent learning rate"
+tf.app.flags.DEFINE_float('gd_lr_decay', 1., "Gradient descent learning rate"
                           " decay.")
 tf.app.flags.DEFINE_integer('batch_size', 20, "Batch size.")
 tf.app.flags.DEFINE_integer('embedding_size', 256, "Number of hidden units.")
@@ -31,8 +30,8 @@ tf.app.flags.DEFINE_boolean('pyramid_encoder', False, "Set to True to use an"
 tf.app.flags.DEFINE_boolean('use_lstm', False, "Set to False to use GRUs.")
 tf.app.flags.DEFINE_boolean('use_residual', False, "Set to True to add the RNN"
                             " inputs to the outputs.")
-tf.app.flags.DEFINE_string('attention', None, "'bahdanau' or 'luong' (none)"
-                           " by default.")
+tf.app.flags.DEFINE_string('attention', None, "'bahdanau' or 'luong' (none"
+                           " by default).")
 tf.app.flags.DEFINE_float('dropout', 1., "Keep probability for dropout on the"
                           "RNNs' non-recurrent connections.")
 tf.app.flags.DEFINE_float('max_grad_norm', 5., "Clip gradients to this norm.")
@@ -66,9 +65,9 @@ def train():
   
   print("Building dynamic character-level QALB data...")
   dataset = CharQALB(
-    'QALB', batch_size=FLAGS.batch_size,
+    'QALB', extension=FLAGS.extension,
     max_input_length=FLAGS.max_sentence_length,
-    max_label_length=FLAGS.max_sentence_length, extension=FLAGS.extension)
+    max_label_length=FLAGS.max_sentence_length)
   
   print("Building computational graph...")
   graph = tf.Graph()
@@ -171,9 +170,8 @@ def decode():
     
   print("Building dynamic word-level QALB data...")
   dataset = CharQALB(
-    'QALB', batch_size=1,
-    max_input_length=max_length, max_label_length=max_length,
-    extension=FLAGS.extension)
+    'QALB', extension=FLAGS.extension,
+    max_input_length=max_length, max_label_length=max_length)
   
   print("Building computational graph...")
   graph = tf.Graph()
