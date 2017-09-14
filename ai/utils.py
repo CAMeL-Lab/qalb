@@ -2,6 +2,7 @@
    general settings."""
 
 from abc import ABCMeta
+import re
 
 import tensorflow as tf
 
@@ -27,6 +28,20 @@ def get_trainables():
   for tvar in tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES):
     result[tvar.name] = sess.run(tvar).tolist()
   return result
+
+
+def max_repetitions(s, threshold=8):
+  """Find the largest contiguous repeating substring in s, repeating itself at
+     least `threshold` times. Example:
+     >>> max_repetitions("blablasbla")  # returns ['bla', 2]."""
+  repetitions_re = re.compile(r'(.+?)\1{%d,}' % threshold)
+  max_repeated = None
+  for match in repetitions_re.finditer(s):
+    new_repeated = [match.group(1), len(match.group(0))/len(match.group(1))]
+    # pylint: disable=unsubscriptable-object
+    if max_repeated is None or max_repeated[1] < new_repeated[1]:
+      max_repeated = new_repeated
+  return max_repeated
 
 
 def split_train_test(pairs, ratio=.7):
