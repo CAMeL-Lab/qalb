@@ -5,8 +5,10 @@ from __future__ import division, print_function
 import os
 import sys
 
+from six.moves import xrange
 import numpy as np
 import tensorflow as tf
+import editdistance
 
 from ai.datasets import CharQALB
 from ai.models import Seq2Seq
@@ -91,11 +93,20 @@ def train():
       use_residual=FLAGS.use_residual, attention=FLAGS.attention, beam_size=1,
       dropout=FLAGS.dropout, restore=FLAGS.restore,
       model_name=FLAGS.model_name)
-
-  with tf.Session(graph=graph) as sess:
+  
+  device_config = tf.ConfigProto(log_device_placement=True)
+  with tf.Session(graph=graph, device_config) as sess:
     print("Initializing or restoring model...")
     m.start()
     print("Entering training loop...")
+    
+    def lev_norm(outputs, labels):
+      distances = []
+      for i in xrange(len(outputs)):
+        gold = dataset.untokenize(labels[i], join_str='')
+        distances.append(editdistance.eval(outputs[i], gold) / len(gold))
+      return sum(distances) / len(distances)
+    
     while True:
       step = m.global_step.eval()
       
@@ -135,6 +146,14 @@ def train():
         # Write summaries to TensorBoard
         m.train_writer.add_summary(train_summary, global_step=step)
         m.valid_writer.add_summary(valid_summary, global_step=step)
+        m.valid_writer.add_summary(
+          sess.run(tf.summary.scalar(
+            'lev_norm_supervised', lev_norm(valid_output, valid_labels))),
+          global_step=step)
+        m.valid_writer.add_summary(
+          sess.run(tf.summary.scalar(
+            'lev_norm_generative', lev_norm(valid_gen_output, valid_labels))),
+          global_step=step)
         print("==============================================================")
         print("Step {0} (lr={1}, p_sample={2}, train_ppx={3}, valid_ppx={4})"
               "".format(step, lr, p_sample, train_ppx, valid_ppx)
