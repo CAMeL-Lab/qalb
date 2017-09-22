@@ -2,6 +2,8 @@
 
 from __future__ import division
 
+import os
+
 from six.moves import xrange
 import tensorflow as tf
 # pylint: disable=no-name-in-module
@@ -104,6 +106,16 @@ class Seq2Seq(BaseModel):
     super(Seq2Seq, self).__init__(**kw)
   
   
+  def start(self):
+    super(Seq2Seq, self).start()
+    # Summary writer for generative output
+    infer_dir = os.path.join('output', self.model_name, 'infer')
+    if not self.restore:
+      tf.gfile.MakeDirs(infer_dir)
+    sess = tf.get_default_session()
+    self.infer_writer = tf.summary.FileWriter(infer_dir, graph=sess.graph)
+  
+  
   def build_graph(self):
     
     # Placeholders
@@ -159,17 +171,30 @@ class Seq2Seq(BaseModel):
       loss = tf.contrib.seq2seq.sequence_loss(logits, self.labels, mask)
     
     self.perplexity = tf.exp(loss, name='perplexity')
-    tf.summary.scalar('perplexity', self.perplexity)
+    self.perplexity_summary = tf.summary.scalar('perplexity', self.perplexity)
     
     # Index outputs (greedy)
     self.output = tf.argmax(
       logits, axis=2, name='output', output_type=tf.int32)
     
     # Compute the edit distance for evaluations
-    hypothesis = self.make_eval_tensor(self.output)
-    truth = self.make_eval_tensor(self.labels)
-    self.edit_distance = tf.reduce_mean(tf.edit_distance(hypothesis, truth))
-    tf.summary.scalar('edit_distance', self.edit_distance)
+    with tf.name_scope('edit_distance'):
+      tensor_shape = [self.batch_size, self.max_decoder_length]
+      self.lev_in = tf.placeholder(tf.int32, name='lev_in', shape=tensor_shape)
+      # Sparse tensor for inputs
+      lev_in_indices = tf.where(tf.not_equal(self.lev_in, 0))
+      hypothesis = tf.SparseTensor(
+        indices=lev_in_indices,
+        values=tf.gather_nd(self.lev_in, lev_in_indices),
+        dense_shape=tensor_shape)
+      # Sparse tensor for labels
+      labels_indices = tf.where(tf.not_equal(self.lev_in, 0))
+      truth = tf.SparseTensor(
+        indices=labels_indices,
+        values=tf.gather_nd(self.labels, labels_indices),
+        dense_shape=tensor_shape)
+      self.lev_out = tf.reduce_mean(tf.edit_distance(hypothesis, truth))
+    self.lev_summary = tf.summary.scalar('edit_distance', self.lev_out)
     
     # Adam and gradient descent optimizers with norm clipping. This prevents
     # exploding gradients and allows a switch from Adam to SGD when the model
@@ -362,13 +387,3 @@ class Seq2Seq(BaseModel):
     generative_output = tf.contrib.seq2seq.dynamic_decode(
       generative_decoder, maximum_iterations=self.max_decoder_length)
     return logits, generative_output
-  
-  
-  def make_eval_tensor(self, sequences):
-    """Given a tensor of arrays of sequences, make a `SparseTensor` to feed to
-       the `tf.edit_distance` method."""
-    indices = tf.where(tf.not_equal(sequences, 0))
-    return tf.SparseTensor(
-      indices=indices,
-      values=tf.gather_nd(sequences, indices),
-      dense_shape=[self.batch_size, self.max_decoder_length])

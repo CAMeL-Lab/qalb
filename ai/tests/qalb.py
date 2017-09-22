@@ -4,6 +4,7 @@ from __future__ import division, print_function
 
 import os
 import sys
+import timeit
 
 from six.moves import xrange
 import numpy as np
@@ -100,17 +101,21 @@ def train():
     
     while True:
       step = m.global_step.eval()
-      print("Step", step)
       
       # Gradient descent and backprop
       # TODO: add lr decays
       train_inputs, train_labels = dataset.get_batch(FLAGS.batch_size)
       train_fd = {m.inputs: train_inputs, m.labels: train_labels}
       
-      if FLAGS.switch_to_sgd and step >= FLAGS.switch_to_sgd:
-        sess.run(m.sgd, feed_dict=train_fd)
-      else:
-        sess.run(m.adam, feed_dict=train_fd)
+      # Wrap into function to measure running time
+      def train_step():
+        if FLAGS.switch_to_sgd and step >= FLAGS.switch_to_sgd:
+          sess.run(m.sgd, feed_dict=train_fd)
+        else:
+          sess.run(m.adam, feed_dict=train_fd)
+      
+      print("Global step {0} ({1}s)".format(
+        step, timeit.timeit(train_step, number=1)))
       
       # Decay sampling probability with inverse sigmoid decay
       # TODO: add options for different decays
@@ -119,37 +124,57 @@ def train():
         sess.run(tf.assign(m.p_sample, 1 - k / (k + np.exp(step/k))))
       
       if step % FLAGS.num_steps_per_eval == 0:
-        
-        # Show learning rate and sample outputs from training set
-        lr, train_ppx, train_lev, p_sample, train_summ = sess.run([
-          m.adam_lr,
-          m.perplexity,
-          m.edit_distance,
-          m.p_sample,
-          m.summary_op,
-        ], feed_dict=train_fd)
-        # Evaluate and show samples on validation set
         valid_inputs, valid_labels = dataset.get_batch(
           FLAGS.batch_size, draw_from_valid=True)
         valid_fd = {m.inputs: valid_inputs, m.labels: valid_labels}
-        valid_ppx, valid_lev, valid_output, gen_output, valid_summ = sess.run([
+        
+        # Run training and validation perplexity and samples
+        
+        lr, train_ppx, train_output, p_sample, train_ppx_summ = sess.run([
+          m.adam_lr,
           m.perplexity,
-          m.edit_distance,
+          m.output,
+          m.p_sample,
+          m.perplexity_summary,
+        ], feed_dict=train_fd)
+        
+        valid_ppx, valid_output, infer_output, valid_ppx_summ = sess.run([
+          m.perplexity,
           m.output,
           m.generative_output,
-          m.summary_op,
+          m.perplexity_summary,
         ], feed_dict=valid_fd)
-        gen_output = gen_output[0].sample_id
+        infer_output = infer_output[0].sample_id
+        
+        # Run training, validation and inference Levenshtein distances
+        
+        train_lev, train_lev_summ = sess.run(
+          [m.lev_out, m.lev_summary],
+          feed_dict={m.lev_in: train_output, m.labels: train_labels})
+        
+        valid_lev, valid_lev_summ = sess.run(
+          [m.lev_out, m.lev_summary],
+          feed_dict={m.lev_in: valid_output, m.labels: valid_labels})
+        
+        infer_lev, infer_lev_summ = sess.run(
+          [m.lev_out, m.lev_summary],
+          feed_dict={m.lev_in: infer_output, m.labels: valid_labels})
         
         # Write summaries to TensorBoard
-        m.train_writer.add_summary(train_summ, global_step=step)
-        m.valid_writer.add_summary(valid_summ, global_step=step)
+        m.train_writer.add_summary(train_ppx_summ, global_step=step)
+        m.train_writer.add_summary(train_lev_summ, global_step=step)
+        m.valid_writer.add_summary(valid_ppx_summ, global_step=step)
+        m.valid_writer.add_summary(valid_lev_summ, global_step=step)
+        m.infer_writer.add_summary(infer_lev_summ, global_step=step)
+        
+        # Display results to stdout
         print("  lr:", lr)
         print("  p_sample:", p_sample)
         print("  train_ppx:", train_ppx)
         print("  train_lev:", train_lev)
         print("  valid_ppx:", valid_ppx)
         print("  valid_lev:", valid_lev)
+        print("  infer_lev:", infer_lev)
         print("Input:")
         print(dataset.untokenize(valid_inputs[0], join_str=''))
         print("Target:")
@@ -157,7 +182,7 @@ def train():
         print("Output with ground truth:")
         print(dataset.untokenize(valid_output[0], join_str=''))
         print("Decoded output:")
-        print(dataset.untokenize(gen_output[0], join_str=''))
+        print(dataset.untokenize(infer_output[0], join_str=''))
         sys.stdout.flush()
       
       if step % FLAGS.num_steps_per_save == 0:
@@ -233,5 +258,5 @@ def main(_):
   else:
     train()
 
-if __name__ == "__main__":
+if __name__ == '__main__':
   tf.app.run()
