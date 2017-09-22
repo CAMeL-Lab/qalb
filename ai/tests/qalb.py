@@ -8,7 +8,6 @@ import sys
 from six.moves import xrange
 import numpy as np
 import tensorflow as tf
-import editdistance
 
 from ai.datasets import CharQALB
 from ai.models import Seq2Seq
@@ -21,7 +20,7 @@ tf.app.flags.DEFINE_float('gd_lr', .1, "Gradient descent learning rate.")
 tf.app.flags.DEFINE_float('gd_lr_decay', 1., "Gradient descent learning rate"
                           " decay.")
 tf.app.flags.DEFINE_integer('batch_size', 20, "Batch size.")
-tf.app.flags.DEFINE_integer('embedding_size', 256, "Number of hidden units.")
+tf.app.flags.DEFINE_integer('embedding_size', 128, "Number of hidden units.")
 tf.app.flags.DEFINE_integer('rnn_layers', 2, "Number of RNN layers.")
 tf.app.flags.DEFINE_boolean('bidirectional_encoder', True, "Whether to use a"
                             " bidirectional RNN in the encoder's 1st layer.")
@@ -94,21 +93,14 @@ def train():
       dropout=FLAGS.dropout, restore=FLAGS.restore,
       model_name=FLAGS.model_name)
   
-  device_config = tf.ConfigProto(log_device_placement=True)
-  with tf.Session(graph=graph, device_config) as sess:
+  with tf.Session(graph=graph) as sess:
     print("Initializing or restoring model...")
     m.start()
     print("Entering training loop...")
     
-    def lev_norm(outputs, labels):
-      distances = []
-      for i in xrange(len(outputs)):
-        gold = dataset.untokenize(labels[i], join_str='')
-        distances.append(editdistance.eval(outputs[i], gold) / len(gold))
-      return sum(distances) / len(distances)
-    
     while True:
       step = m.global_step.eval()
+      print("Step", step)
       
       # Gradient descent and backprop
       # TODO: add lr decays
@@ -129,36 +121,35 @@ def train():
       if step % FLAGS.num_steps_per_eval == 0:
         
         # Show learning rate and sample outputs from training set
-        lr, train_ppx, p_sample, train_summary = sess.run(
-          [m.adam_lr, m.perplexity, m.p_sample, m.summary_op],
-          feed_dict=train_fd
-        )
+        lr, train_ppx, train_lev, p_sample, train_summ = sess.run([
+          m.adam_lr,
+          m.perplexity,
+          m.edit_distance,
+          m.p_sample,
+          m.summary_op,
+        ], feed_dict=train_fd)
         # Evaluate and show samples on validation set
         valid_inputs, valid_labels = dataset.get_batch(
           FLAGS.batch_size, draw_from_valid=True)
         valid_fd = {m.inputs: valid_inputs, m.labels: valid_labels}
-        valid_ppx, valid_output, valid_gen_output, valid_summary = sess.run(
-          [m.perplexity, m.output, m.generative_output, m.summary_op],
-          feed_dict=valid_fd
-        )
-        valid_gen_output = valid_gen_output[0].sample_id
+        valid_ppx, valid_lev, valid_output, gen_output, valid_summ = sess.run([
+          m.perplexity,
+          m.edit_distance,
+          m.output,
+          m.generative_output,
+          m.summary_op,
+        ], feed_dict=valid_fd)
+        gen_output = gen_output[0].sample_id
         
         # Write summaries to TensorBoard
-        m.train_writer.add_summary(train_summary, global_step=step)
-        m.valid_writer.add_summary(valid_summary, global_step=step)
-        m.valid_writer.add_summary(
-          sess.run(tf.summary.scalar(
-            'lev_norm_supervised', lev_norm(valid_output, valid_labels))),
-          global_step=step)
-        m.valid_writer.add_summary(
-          sess.run(tf.summary.scalar(
-            'lev_norm_generative', lev_norm(valid_gen_output, valid_labels))),
-          global_step=step)
-        print("==============================================================")
-        print("Step {0} (lr={1}, p_sample={2}, train_ppx={3}, valid_ppx={4})"
-              "".format(step, lr, p_sample, train_ppx, valid_ppx)
-             )
-        print("==============================================================")
+        m.train_writer.add_summary(train_summ, global_step=step)
+        m.valid_writer.add_summary(valid_summ, global_step=step)
+        print("  lr:", lr)
+        print("  p_sample:", p_sample)
+        print("  train_ppx:", train_ppx)
+        print("  train_lev:", train_lev)
+        print("  valid_ppx:", valid_ppx)
+        print("  valid_lev:", valid_lev)
         print("Input:")
         print(dataset.untokenize(valid_inputs[0], join_str=''))
         print("Target:")
@@ -166,11 +157,10 @@ def train():
         print("Output with ground truth:")
         print(dataset.untokenize(valid_output[0], join_str=''))
         print("Decoded output:")
-        print(dataset.untokenize(valid_gen_output[0], join_str=''))
+        print(dataset.untokenize(gen_output[0], join_str=''))
         sys.stdout.flush()
       
       if step % FLAGS.num_steps_per_save == 0:
-        print("==============================================================")
         print("Saving model...")
         m.save()
         print("Model saved. Resuming training...")

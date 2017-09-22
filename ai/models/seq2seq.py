@@ -153,9 +153,6 @@ class Seq2Seq(BaseModel):
       logits, self.generative_output = self.build_decoder(
         encoder_output, decoder_input)
     
-    # Index outputs (greedy)
-    self.output = tf.argmax(logits, axis=2, name='output')
-    
     # Softmax cross entropy loss masked by the target sequence lengths
     with tf.name_scope('loss'):
       mask = tf.cast(tf.sign(self.labels), tf.float32)
@@ -163,6 +160,16 @@ class Seq2Seq(BaseModel):
     
     self.perplexity = tf.exp(loss, name='perplexity')
     tf.summary.scalar('perplexity', self.perplexity)
+    
+    # Index outputs (greedy)
+    self.output = tf.argmax(
+      logits, axis=2, name='output', output_type=tf.int32)
+    
+    # Compute the edit distance for evaluations
+    hypothesis = self.make_eval_tensor(self.output)
+    truth = self.make_eval_tensor(self.labels)
+    self.edit_distance = tf.reduce_mean(tf.edit_distance(hypothesis, truth))
+    tf.summary.scalar('edit_distance', self.edit_distance)
     
     # Adam and gradient descent optimizers with norm clipping. This prevents
     # exploding gradients and allows a switch from Adam to SGD when the model
@@ -355,3 +362,13 @@ class Seq2Seq(BaseModel):
     generative_output = tf.contrib.seq2seq.dynamic_decode(
       generative_decoder, maximum_iterations=self.max_decoder_length)
     return logits, generative_output
+  
+  
+  def make_eval_tensor(self, sequences):
+    """Given a tensor of arrays of sequences, make a `SparseTensor` to feed to
+       the `tf.edit_distance` method."""
+    indices = tf.where(tf.not_equal(sequences, 0))
+    return tf.SparseTensor(
+      indices=indices,
+      values=tf.gather_nd(sequences, indices),
+      dense_shape=[self.batch_size, self.max_decoder_length])
