@@ -2,6 +2,7 @@
 
 from __future__ import division, print_function
 
+import io
 import os
 import sys
 import timeit
@@ -196,7 +197,7 @@ def decode():
   """Run a blind test on the file with path given by the `decode` flag."""
   
   print("Reading data...")
-  with open(FLAGS.decode) as test_file:
+  with io.open(FLAGS.decode, encoding='utf-8') as test_file:
     lines = test_file.readlines()
     # Get the largest sentence length to set an upper bound to the decoder
     # TODO: add some heuristic to allow that to increase a bit more
@@ -231,7 +232,7 @@ def decode():
     m.start()
     print("Restored model (global step {})".format(m.global_step.eval()))
     
-    with open(FLAGS.output_path, 'w') as output_file:
+    with io.open(FLAGS.output_path, 'w', encoding='utf-8') as output_file:
       for line in lines:
         print('Input:')
         print(line)
@@ -241,7 +242,7 @@ def decode():
         feed_dict = {m.inputs: [ids], m.temperature: 1.}
         o_ids = sess.run(m.generative_output[0].sample_id, feed_dict=feed_dict)
         # Remove the _EOS token
-        output = dataset.untokenize(o_ids[0], join_str='')[-1] + '\n'
+        output = dataset.untokenize(o_ids[0], join_str='')[:-1] + '\n'
         print('Output:')
         print(output)
         output_file.write(output)

@@ -46,6 +46,7 @@ class BaseDataset(object):
     result = []
     for i in xrange(len(input_list) - (self.gram_order - 1)):
       gram = tuple(input_list[i:i+self.gram_order])  # lists are unhashable
+      
       if gram not in self.type_to_ix:
         if not self.max_types or self.num_types() < self.max_types:
           self.type_to_ix[gram] = len(self.ix_to_type)
