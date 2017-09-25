@@ -23,6 +23,12 @@ For more information on each of the submodules, see the docstrings of their resp
 
 For running created tests, run `python -m ai.tests.filename` in the top-level directory. See the individual test files for more information on the flags that can be passed to them directly via the terminal.
 
+## Evaluations
+
+To compute the F1 score, use `python ai/tests/m2scripts/m2scorer.py --beta 1 -v $1 $2` where `$1` is the output file and `$2` is the `.m2` file.
+
+To compute the Levenshtein score, use `python levenshtein.py $1 $2` where `$1` is the output file and `$2` is the `.gold` file.
+
 ## Style guide
 
 All python code should ahere to PEP-8 standards. Indentation is the only exception-- all the code in the project uses 2 spaces. All lines should not exceed 80 characters for readability.
