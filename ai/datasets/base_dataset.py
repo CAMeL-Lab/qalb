@@ -56,14 +56,17 @@ class BaseDataset(object):
       result.append(self.type_to_ix[gram])
     return result
   
-  def untokenize(self, tokens, join_str=' ', include_special=True):
-    """Converts the argument list of integer ids back to a string."""
+  def clean(self, tokens):
+    """Remove the _EOS token and everything after it, if found."""
     try:
-      tokens = tokens[:1+list(tokens).index(self.type_to_ix['_EOS'])]
+      tokens = tokens[:list(tokens).index(self.type_to_ix['_EOS'])]
     except ValueError:
       pass
-    return join_str.join([self.ix_to_type[t][0] for t in tokens
-                          if include_special or t > 3])
+    return tokens
+  
+  def untokenize(self, tokens, join_str=' '):
+    """Converts the argument list of integer ids back to a string."""
+    return join_str.join([self.ix_to_type[t][0] for t in tokens])
   
   def get_batches(self, batch_size):
     """Groups the triples into batches, and allows randomized order."""

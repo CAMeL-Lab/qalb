@@ -23,14 +23,12 @@ class Seq2Seq(BaseModel):
   
   def __init__(self, num_types=0, max_encoder_length=99, max_decoder_length=99,
                pad_id=0, eos_id=1, go_id=2,
-               adam_lr=1e-3, adam_lr_decay=1.,
-               gd_lr=.1, gd_lr_decay=1.,
-               batch_size=32, embedding_size=128, train_embeddings=True,
-               default_embedding_matrix=None, rnn_layers=2,
+               batch_size=32, embedding_size=32, hidden_size=256, rnn_layers=2,
+               train_embeddings=True, default_embedding_matrix=None,
                bidirectional_encoder=False, bidirectional_mode='add',
-               pyramid_encoder=False, use_lstm=False, use_residual=False,
-               attention=None, feed_inputs=False, dropout=1.,
-               max_grad_norm=5., epsilon=1e-8, beam_size=1., **kw):
+               use_lstm=False, use_residual=False, attention=None,
+               feed_inputs=False, dropout=1.,
+               max_grad_norm=5., epsilon=1e-8, beam_size=1, **kw):
     """Keyword args:
        `num_types`: number of unique types (e.g. vocabulary or alphabet size),
        `max_encoder_length`: max length of the encoder,
@@ -38,16 +36,13 @@ class Seq2Seq(BaseModel):
        `pad_id`: the integer id that represents padding (defaults to 0),
        `eos_id`: the integer id that represents the end of the sequence,
        `go_id`: the integer id fed to the decoder as the first input,
-       `adam_lr`: initial learning rate for Adam optimizer,
-       `adam_lr_decay`: learning rate decay for Adam optimizer,
-       `gd_lr`: initial learning rate for gradient descent optimizer,
-       `gd_lr_decay`: learning rate decay for gradient descent optimizer,
        `batch_size`: minibatch size,
-       `embedding_size`: integer number of hidden units,
+       `embedding_size`: dimensionality of the embeddings,
+       `hidden_size`: dimensionality of the hidden units for the RNNs,
+       `rnn_layers`: number of RNN layers for the encoder and decoder,
        `train_embeddings`: whether to do backprop on the embeddings,
        `default_embedding_matrix`: if None, set to a random uniform
         distribution with mean 0 and variance 1,
-       `rnn_layers`: number of RNN layers for the encoder and decoder,
        `bidirectional_encoder`: whether to use a bidirectional encoder RNN,
        `bidirectional_mode`: string for the bidirectional RNN architecture:
         'add' (default): add the forward and backward hidden states,
@@ -56,16 +51,16 @@ class Seq2Seq(BaseModel):
         'concat': concatenate the forward and backward inputs and pass that
                   as the input to the next RNN (note: this will not allow the
                   use of residual connections),
-       `pyramid_encoder`: whether to use a pyramid encoder that halves the
-        number of time steps per layer (Xie et al.,
-        https://arxiv.org/pdf/1603.09727),
        `use_lstm`: set to False to use a GRU cell (Cho et al.,
         https://arxiv.org/abs/1406.1078),
        `use_residual`: whether to use residual connections between RNN cells
         (Wu et al., https://arxiv.org/pdf/1609.08144.pdf),
        `attention`: 'bahdanau', or 'luong' (none by default),
+       
+       # TODO: implement this feature
        `feed_inputs`: set to True to feed attention-based inputs to the
         decoder RNN (Luong et al., https://arxiv.org/abs/1508.04025),
+        
        `dropout`: keep probability for the non-recurrent connections between
         RNN cells. Defaults to 1.0; i.e. no dropout,
        `max_grad_norm`: clip gradients to maximally this norm,
@@ -76,16 +71,14 @@ class Seq2Seq(BaseModel):
     self.pad_id = pad_id
     self.eos_id = eos_id
     self.go_id = go_id
-    self.adam_lr_decay = adam_lr_decay
-    self.gd_lr_decay = gd_lr_decay
     self.batch_size = batch_size
     self.embedding_size = embedding_size
+    self.hidden_size = hidden_size
     self.train_embeddings = train_embeddings
     self.default_embedding_matrix = default_embedding_matrix
     self.rnn_layers = rnn_layers
     self.bidirectional_encoder = bidirectional_encoder
     self.bidirectional_mode = bidirectional_mode
-    self.pyramid_encoder = pyramid_encoder
     self.use_lstm = use_lstm
     self.use_residual = use_residual
     self.attention = attention
@@ -95,10 +88,8 @@ class Seq2Seq(BaseModel):
     self.epsilon = epsilon
     self.beam_size = beam_size
     # Use graph variables for learning rates to allow them to be modified/saved
-    self.adam_lr = tf.Variable(
-      adam_lr, trainable=False, dtype=tf.float32, name='adam_learning_rate')
-    self.gd_lr = tf.Variable(
-      gd_lr, trainable=False, dtype=tf.float32, name='gd_learning_rate')
+    self.lr = tf.Variable(
+      1e-3, trainable=False, dtype=tf.float32, name='learning_rate')
     # Sampling probability variable that can be manually changed. See scheduled
     # sampling paper (Bengio et al., https://arxiv.org/abs/1506.03099)
     self.p_sample = tf.Variable(
@@ -203,22 +194,14 @@ class Seq2Seq(BaseModel):
       tvars = tf.trainable_variables()
       grads, _ = tf.clip_by_global_norm(
         tf.gradients(loss, tvars), self.max_grad_norm)
-      adam_optimizer = tf.train.AdamOptimizer(
-        self.adam_lr, epsilon=self.epsilon)
-      gradient_descent = tf.train.GradientDescentOptimizer(self.gd_lr)
+      # Adam optimizer op (first and second order momenta)
+      adam_optimizer = tf.train.AdamOptimizer(self.lr, epsilon=self.epsilon)
       self.adam = adam_optimizer.apply_gradients(
         zip(grads, tvars), global_step=self.global_step)
+      # Simple gradient descent op
+      gradient_descent = tf.train.GradientDescentOptimizer(self.lr)
       self.sgd = gradient_descent.apply_gradients(
         zip(grads, tvars), global_step=self.global_step)
-    
-    # Runnable ops for decaying the learning rates
-    with tf.name_scope('decay_lr'):
-      self.decay_adam_lr = tf.assign(
-        self.adam_lr, self.adam_lr * self.adam_lr_decay,
-        name='decay_adam_learning_rate')
-      self.decay_gd_lr = tf.assign(
-        self.gd_lr, self.gd_lr * self.gd_lr_decay,
-        name='decay_gd_learning_rate')
   
   
   def get_embeddings(self, ids):
@@ -234,7 +217,7 @@ class Seq2Seq(BaseModel):
     
     # Allow custom number of hidden units
     if num_units is None:
-      num_units = self.embedding_size
+      num_units = self.hidden_size
     
     # Check to use LSTM or GRU
     if self.use_lstm:
@@ -275,7 +258,7 @@ class Seq2Seq(BaseModel):
         encoder_output = tf.concat([encoder_fw_out, encoder_bw_out], 2)
         if self.bidirectional_mode == 'project':
           encoder_output = tf.layers.dense(
-            encoder_output, self.embedding_size, activation=tf.tanh,
+            encoder_output, self.hidden_size, activation=tf.tanh,
             name='bidirectional_projection')
     else:
       encoder_output, _ = tf.nn.dynamic_rnn(
@@ -284,37 +267,17 @@ class Seq2Seq(BaseModel):
     
     # Only for deep RNN architectures
     if self.rnn_layers > 1:
-      
-      if self.pyramid_encoder:
-        for i in xrange(1, self.rnn_layers):
-          # TODO: inspect this
-          # Concatenate adjacent pairs and reshape them to their original size
-          eo_sh = encoder_output.get_shape()
-          concat_shape = map(int, [eo_sh[0], eo_sh[1] / 2, eo_sh[2] * 2])
-          encoder_output = tf.layers.dense(
-            tf.reshape(encoder_output, concat_shape), self.embedding_size,
-            name='pyramid_projection_{}'.format(i))
-          # Run the next layer with half as many time steps
-          encoder_output, _ = tf.nn.dynamic_rnn(
-            self.rnn_cell(self.embedding_size / (2 ** i)),
-            tf.reshape(encoder_output, concat_shape), dtype=tf.float32)
-      else:
-        encoder_cells = tf.contrib.rnn.MultiRNNCell(
-          [self.rnn_cell() for _ in xrange(self.rnn_layers - 1)])
-        encoder_output, _ = tf.nn.dynamic_rnn(
-          encoder_cells, encoder_output, dtype=tf.float32,
-          sequence_length=self.input_lengths)
+      encoder_cells = tf.contrib.rnn.MultiRNNCell(
+        [self.rnn_cell() for _ in xrange(self.rnn_layers - 1)])
+      encoder_output, _ = tf.nn.dynamic_rnn(
+        encoder_cells, encoder_output, dtype=tf.float32,
+        sequence_length=self.input_lengths)
     
     return tf.contrib.seq2seq.tile_batch(encoder_output, self.beam_size)
   
   
   def build_decoder(self, encoder_output, decoder_input):
     """Build the decoder RNN stack and the final prediction layer."""
-    
-    final_encoder_lengths = self.input_lengths
-    if self.pyramid_encoder and self.rnn_layers > 1:
-      time_steps = int(self.max_encoder_length / (2 ** (self.rnn_layers - 1)))
-      final_encoder_lengths = tf.ones([self.batch_size, time_steps])
     
     # The first RNN is wrapped with the attention mechanism
     # TODO: make Luong attention actually follow the computational steps
@@ -323,18 +286,18 @@ class Seq2Seq(BaseModel):
     attention_mechanism = None
     if self.attention == 'bahdanau':
       attention_mechanism = tf.contrib.seq2seq.BahdanauAttention(
-        self.embedding_size, encoder_output,
-        memory_sequence_length=final_encoder_lengths)
+        self.hidden_size, encoder_output,
+        memory_sequence_length=self.input_lengths)
     elif self.attention == 'luong':
       attention_mechanism = tf.contrib.seq2seq.LuongAttention(
-        self.embedding_size, encoder_output,
-        memory_sequence_length=final_encoder_lengths)
+        self.hidden_size, encoder_output,
+        memory_sequence_length=self.input_lengths)
     
     decoder_cell = self.rnn_cell(attention_mechanism=attention_mechanism)
     
     # Use the first output of the encoder to learn an initial decoder state
     initial_state_pass = tf.split(tf.layers.dense(
-      encoder_output[:, 0], self.embedding_size * self.rnn_layers,
+      encoder_output[:, 0], self.hidden_size * self.rnn_layers,
       activation=tf.tanh, name='initial_decoder_state'
     ), self.rnn_layers, axis=1)
     beam_batch_size = self.batch_size * self.beam_size  # shortcut
@@ -342,7 +305,7 @@ class Seq2Seq(BaseModel):
     if self.attention:
       initial_state = tf.contrib.seq2seq.AttentionWrapperState(
         cell_state=initial_state_pass[0],
-        attention=tf.zeros([beam_batch_size, self.embedding_size]),
+        attention=tf.zeros([beam_batch_size, self.hidden_size]),
         alignments=tf.zeros([beam_batch_size, self.max_decoder_length]),
         time=tf.zeros(()), alignment_history=())
     else:
@@ -383,6 +346,7 @@ class Seq2Seq(BaseModel):
     generative_decoder = tf.contrib.seq2seq.BasicDecoder(
       decoder_cell, ghelper, initial_state, output_layer=dense)
     ### END TEMPORARY
+    
     tf.get_variable_scope().reuse_variables()
     generative_output = tf.contrib.seq2seq.dynamic_decode(
       generative_decoder, maximum_iterations=self.max_decoder_length)
