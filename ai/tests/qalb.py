@@ -35,7 +35,7 @@ tf.app.flags.DEFINE_float('dropout', 1., "Keep probability for dropout on the"
                           "RNNs' non-recurrent connections.")
 tf.app.flags.DEFINE_float('max_grad_norm', 5., "Clip gradients to this norm.")
 tf.app.flags.DEFINE_float('epsilon', 1e-8, "Denominator constant for Adam.")
-tf.app.flags.DEFINE_integer('beam_size', 1, "Beam search size.")
+tf.app.flags.DEFINE_integer('beam_size', 5, "Beam search size.")
 # Set this to > 0 even if no decay
 tf.app.flags.DEFINE_float('p_sample', .3, 'Initial sampling probability.')
 tf.app.flags.DEFINE_integer('switch_to_sgd', None, "Set to a number of steps"
@@ -57,6 +57,13 @@ tf.app.flags.DEFINE_string('model_name', None, "Name of the output directory.")
 
 
 FLAGS = tf.app.flags.FLAGS
+
+
+def pad_output(outputs):
+  diff = FLAGS.max_sentence_length - np.shape(outputs)[1]
+  if diff:
+    outputs = np.concatenate(outputs, np.zeros(FLAGS.batch_size, diff))
+  return outputs
 
 
 def train():
@@ -86,7 +93,8 @@ def train():
       use_lstm=FLAGS.use_lstm, use_residual=FLAGS.use_residual,
       attention=FLAGS.attention, dropout=FLAGS.dropout,
       max_grad_norm=FLAGS.max_grad_norm, epsilon=FLAGS.epsilon, 
-      beam_size=1, restore=FLAGS.restore, model_name=FLAGS.model_name)
+      beam_size=FLAGS.beam_size, restore=FLAGS.restore,
+      model_name=FLAGS.model_name)
   
   with tf.Session(graph=graph) as sess:
     print("Initializing or restoring model...")
@@ -136,7 +144,16 @@ def train():
           m.generative_output,
           m.perplexity_summary,
         ], feed_dict=valid_fd)
-        infer_output = infer_output[0].sample_id
+        infer_output = infer_output[0].predicted_ids
+        
+        # Something is wrong with the `impute_finished` keywork argument in
+        # TensorFlow's `dynamic_decode`, so we correct lengths here.
+        train_output = pad_output(train_output)
+        valid_output = pad_output(valid_output)
+        infer_output = pad_output(infer_output)
+        print("Train inner dim:", np.shape(train_output)[1])
+        print("Valid inner dim:", np.shape(valid_output)[1])
+        print("Infer inner dim:", np.shape(infer_output)[1])
         
         # Run training, validation and inference Levenshtein distances
         

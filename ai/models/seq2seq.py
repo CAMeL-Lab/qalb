@@ -124,11 +124,6 @@ class Seq2Seq(BaseModel):
       self.input_lengths = tf.reduce_sum(
         tf.sign(tf.abs(self.inputs - self.pad_id)), reduction_indices=1)
     
-    # Prepare training decoder inputs
-    with tf.name_scope('train_decoder_inputs'):
-      decoder_ids = tf.concat(
-        [tf.tile([[self.go_id]], [self.batch_size, 1]), self.labels], 1)
-    
     # Embedding matrix
     with tf.variable_scope('embeddings'):
       if self.default_embedding_matrix is not None:
@@ -147,14 +142,12 @@ class Seq2Seq(BaseModel):
     
     # Look up the embeddings for the encoder and decoder inputs
     encoder_input = self.get_embeddings(self.inputs)
-    decoder_input = self.get_embeddings(decoder_ids)
     
     with tf.variable_scope('encoder'):
       encoder_output = self.build_encoder(encoder_input)
     
     with tf.variable_scope('decoder'):
-      logits, self.generative_output = self.build_decoder(
-        encoder_output, decoder_input)
+      logits, self.generative_output = self.build_decoder(encoder_output)
     
     # Softmax cross entropy loss masked by the target sequence lengths
     with tf.name_scope('loss'):
@@ -211,7 +204,7 @@ class Seq2Seq(BaseModel):
     return tf.nn.embedding_lookup(self.embedding_kernel, ids)
   
   
-  def rnn_cell(self, num_units=None, attention_mechanism=None):
+  def rnn_cell(self, num_units=None):
     """Get a new RNN cell with wrappers according to the initial config."""
     cell = None
     
@@ -224,10 +217,6 @@ class Seq2Seq(BaseModel):
       cell = tf.contrib.rnn.LSTMBlockCell(num_units)
     else:
       cell = tf.contrib.rnn.GRUBlockCell(num_units)
-    
-    # Check whether to add an attention mechanism
-    if attention_mechanism is not None:
-      cell = tf.contrib.seq2seq.AttentionWrapper(cell, attention_mechanism)
     
     # Check whether to add residual connections
     if self.use_residual:
@@ -273,81 +262,97 @@ class Seq2Seq(BaseModel):
         encoder_cells, encoder_output, dtype=tf.float32,
         sequence_length=self.input_lengths)
     
-    return tf.contrib.seq2seq.tile_batch(encoder_output, self.beam_size)
+    return encoder_output
   
   
-  def build_decoder(self, encoder_output, decoder_input):
+  def build_decoder(self, encoder_output):
     """Build the decoder RNN stack and the final prediction layer."""
     
-    # The first RNN is wrapped with the attention mechanism
-    # TODO: make Luong attention actually follow the computational steps
-    # described in the paper and implement input-feeding approach
-    # (Luong et al., https://arxiv.org/abs/1508.04025)
+    decoder_cells = [self.rnn_cell() for _ in range(self.rnn_layers)]
+    softmax_layer = Dense(
+      self.num_types, name='dense', activation=lambda x: x / self.temperature)
+    
+    # Decoder for training
+    train_decoder = self.get_decoder_instance(
+      encoder_output, decoder_cells, softmax_layer)
+    train_output = tf.contrib.seq2seq.dynamic_decode(train_decoder)
+    
+    # Decoder for inference
+    infer_decoder = self.get_decoder_instance(
+      encoder_output, decoder_cells, softmax_layer, infer=True)
+    tf.get_variable_scope().reuse_variables()
+    infer_output = tf.contrib.seq2seq.dynamic_decode(
+      infer_decoder, maximum_iterations=self.max_decoder_length)
+    
+    # Returns (training logits, predicted ids for inference)
+    return train_output[0].rnn_output, infer_output[0].predicted_ids[:,:,0]
+  
+  
+  def get_decoder_instance(self, encoder_output, cells, dense, infer=False):
+    """Return the decoder instance wrapping the built RNNs according to the
+       desired mode (training or inference).
+       Args:
+       `encoder_output`: last layer outputs of the encoder RNN,
+       `cells`: list of RNN cell instances,
+       `dense`: the output layer,
+       Keyword Args:
+       `infer`: set to True to return a decoder for inference."""
+    
+    # These variables need to be tiled for beam search
+    batch_size = self.batch_size
+    input_lengths = self.input_lengths
+    if infer:
+      batch_size = self.batch_size * self.beam_size
+      input_lengths = tf.contrib.seq2seq.tile_batch(
+        input_lengths, multiplier=self.beam_size)
+      encoder_output = tf.contrib.seq2seq.tile_batch(
+        encoder_output, multiplier=self.beam_size)
+    
+    # If the model uses attention, wrap one existing layer with the mechanism
     attention_mechanism = None
     if self.attention == 'bahdanau':
       attention_mechanism = tf.contrib.seq2seq.BahdanauAttention(
-        self.hidden_size, encoder_output,
-        memory_sequence_length=self.input_lengths)
+        self.hidden_size, encoder_output, memory_sequence_length=input_lengths)
     elif self.attention == 'luong':
       attention_mechanism = tf.contrib.seq2seq.LuongAttention(
-        self.hidden_size, encoder_output,
-        memory_sequence_length=self.input_lengths)
+        self.hidden_size, encoder_output, memory_sequence_length=input_lengths)
+    # TODO: maybe allow this to be the last cell
+    if self.attention:
+      cells[0] = tf.contrib.seq2seq.AttentionWrapper(
+        cells[0], attention_mechanism)
     
-    decoder_cell = self.rnn_cell(attention_mechanism=attention_mechanism)
+    # Build the MultiRNNCell if the architecture is deep
+    if self.rnn_layers > 1:
+      decoder_cell = tf.contrib.rnn.MultiRNNCell(cells)
     
-    # Use the first output of the encoder to learn an initial decoder state
-    initial_state_pass = tf.split(tf.layers.dense(
-      encoder_output[:, 0], self.hidden_size * self.rnn_layers,
-      activation=tf.tanh, name='initial_decoder_state'
-    ), self.rnn_layers, axis=1)
-    beam_batch_size = self.batch_size * self.beam_size  # shortcut
-    
+    # Get the initial state of the decoder
+    initial_state_pass = encoder_output[:, 0]
+    # TODO: maybe allow this to be the last cell
     if self.attention:
       initial_state = tf.contrib.seq2seq.AttentionWrapperState(
-        cell_state=initial_state_pass[0],
-        attention=tf.zeros([beam_batch_size, self.hidden_size]),
-        alignments=tf.zeros([beam_batch_size, self.max_decoder_length]),
+        cell_state=initial_state_pass,
+        attention=tf.zeros([batch_size, self.hidden_size]),
+        alignments=tf.zeros([batch_size, self.max_decoder_length]),
         time=tf.zeros(()), alignment_history=())
-    else:
-      initial_state = initial_state_pass[0]
-    
-    # For deep RNNs, stack the cells and use an initial state that merges the
-    # initial state (maybe with attention) with the rest of the learned states
     if self.rnn_layers > 1:
-      decoder_cell = tf.contrib.rnn.MultiRNNCell(
-        [decoder_cell] + [self.rnn_cell()
-                          for _ in xrange(self.rnn_layers - 1)])
-      initial_state = tuple([initial_state] + list(initial_state_pass[1:]))
+      copies = [initial_state_pass for _ in range(self.rnn_layers - 1)]
+      initial_state = tuple([initial_state] + copies)
     
-    # Training decoder with optional scheduled sampling. If sampling occurs,
-    # the output will be fed through the final prediction layer and then fed
-    # back to the embedding layer for consistency.
-    # TODO: allow option to choose between embedding and output helpers
-    sampling_helper = tf.contrib.seq2seq.ScheduledEmbeddingTrainingHelper(
-      tf.contrib.seq2seq.tile_batch(decoder_input, self.beam_size),
-      tf.tile([self.max_decoder_length], [beam_batch_size]),
-      self.get_embeddings, self.p_sample)
-    dense = Dense(
-      self.num_types, name='dense', activation=lambda x: x / self.temperature)
-    decoder = tf.contrib.seq2seq.BasicDecoder(
-      decoder_cell, sampling_helper, initial_state, output_layer=dense)
-    decoder_output = tf.contrib.seq2seq.dynamic_decode(decoder)
-    logits = decoder_output[0].rnn_output
+    # Training decoder
+    if not infer:
+      # Prepare training decoder inputs
+      decoder_ids = tf.concat(
+        [tf.tile([[self.go_id]], [self.batch_size, 1]), self.labels], 1)
+      decoder_input = self.get_embeddings(decoder_ids)
+      # Build the schedule sampling helper
+      train_helper = tf.contrib.seq2seq.ScheduledEmbeddingTrainingHelper(
+        decoder_input, tf.tile([self.max_decoder_length], [batch_size]),
+        self.get_embeddings, self.p_sample)
+      return tf.contrib.seq2seq.BasicDecoder(
+        decoder_cell, train_helper, initial_state, output_layer=dense)
     
-    # TODO: make beam search work
-    # generative_decoder = tf.contrib.seq2seq.BeamSearchDecoder(
-    #   decoder_cell, self.get_embeddings,
-    #   tf.tile([self.go_id], [self.batch_size]), self.eos_id,
-    #   initial_state, self.beam_size, output_layer=dense)
-    ### TEMPORARY
-    ghelper = tf.contrib.seq2seq.GreedyEmbeddingHelper(
-      self.get_embeddings, tf.tile([self.go_id], [self.batch_size]),
-      self.eos_id)
-    generative_decoder = tf.contrib.seq2seq.BasicDecoder(
-      decoder_cell, ghelper, initial_state, output_layer=dense)
-    ### END TEMPORARY
-    
-    tf.get_variable_scope().reuse_variables()
-    generative_output = tf.contrib.seq2seq.dynamic_decode(
-      generative_decoder, maximum_iterations=self.max_decoder_length)
-    return logits, generative_output
+    # Inference decoder
+    return tf.contrib.seq2seq.BeamSearchDecoder(
+      decoder_cell, self.get_embeddings,
+      tf.tile([self.go_id], [self.batch_size]), self.eos_id, initial_state,
+      self.beam_size, output_layer=dense)
