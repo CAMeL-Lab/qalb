@@ -7,7 +7,6 @@ from abc import ABCMeta, abstractmethod
 import io
 import os
 
-from six.moves import xrange
 import numpy as np
 
 from ai.datasets import BaseDataset
@@ -62,7 +61,7 @@ class BaseQALB(BaseDataset):
        Note on usage: to account for the _GO and _EOS tokens that the labels
        have inserted, if the maximum length sequences are in the labels, use
        two extra time steps if the goal is to not truncate anything."""
-    super(BaseQALB, self).__init__(**kw)
+    super().__init__(**kw)
     self.file_root = file_root
     self.max_input_length = max_input_length
     self.max_label_length = max_label_length
@@ -142,7 +141,7 @@ class BaseQALB(BaseDataset):
                  or len(sequence[1]) <= self.max_label_length
       if input_ok and label_ok:
         batch.append(sequence)
-    for i in xrange(batch_size):
+    for i in range(batch_size):
       max_input_length = self.max_input_length
       max_label_length = self.max_label_length
       if max_input_length is None or max_label_length is None:
@@ -171,11 +170,15 @@ class CharQALB(BaseQALB):
   
   def make_pairs(self, input_lines, label_lines):
     pairs = []
-    for i in xrange(len(input_lines)):
+    for i in range(len(input_lines)):
       input_line = input_lines[i]
       label_line = label_lines[i][:-1]  # remove newline
       pairs.append(self.make_pair(input_line, label_line))
     return pairs
+  
+  # Override to set the default joining string to not be a whitespace.
+  def untokenize(self, tokens, join_str=''):
+    return super()
 
 
 class WordQALB(BaseQALB):
@@ -183,7 +186,7 @@ class WordQALB(BaseQALB):
   
   def make_pairs(self, input_lines, label_lines):
     pairs = []
-    for i in xrange(len(input_lines)):
+    for i in range(len(input_lines)):
       input_line = input_lines[i].split()
       label_line = label_lines[i].split()
       pairs.append(self.make_pair(input_line, label_line))

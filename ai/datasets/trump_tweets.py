@@ -4,8 +4,6 @@
 
 import json
 
-from six.moves import xrange
-
 from ai.datasets import BaseDataset
 from ai.utils import split_train_test
 
@@ -16,11 +14,11 @@ class TrumpTweets(BaseDataset):
      https://github.com/bpb27/trump-tweet-archive/tree/master/data/realdonaldtrump"""
   
   def __init__(self, **kw):
-    super(TrumpTweets, self).__init__(**kw)
+    super().__init__(**kw)
     
     tweets = []
     max_chars = self.num_steps + self.gram_order - 1
-    for i in xrange(2009, 2017 + 1):
+    for i in range(2009, 2017 + 1):
       
       with open('data/trump_tweets/condensed_{}.json'.format(i)) as json_file:
         file_data = json.load(json_file)

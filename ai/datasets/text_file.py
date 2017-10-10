@@ -2,8 +2,6 @@
 
 """Reader for generic text files."""
 
-from six.moves import xrange
-
 from ai.datasets import BaseDataset
 from ai.utils import split_train_test
 
@@ -20,7 +18,7 @@ class TextFile(BaseDataset):
     
     # Remove the last entry that might have length < `num_steps`.
     max_chars = self.num_steps + self.gram_order
-    for i in xrange(0, len(raw_data) - 1, self.num_steps):
+    for i in range(0, len(raw_data) - 1, self.num_steps):
       data.append(self.tokenize(raw_data[i:i+max_chars]))
     
     del raw_data  # just for memory efficiency

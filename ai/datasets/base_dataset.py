@@ -2,8 +2,6 @@
 
 import random
 
-from six.moves import xrange
-
 from ai.utils import abstractclass
 
 
@@ -37,14 +35,14 @@ class BaseDataset(object):
     self.ix_to_type = ['_PAD', '_EOS', '_GO', '_UNK']
     # Allow to add any extra defaults without modifying both data structures.
     dictarg = lambda i: [self.ix_to_type[i], i]
-    self.type_to_ix = dict(map(dictarg, xrange(len(self.ix_to_type))))
+    self.type_to_ix = dict(map(dictarg, range(len(self.ix_to_type))))
   
   def tokenize(self, input_list):
     """Converts the argument list or string to a list of integer tokens, each
        representing a unique type. If the charachter is not registered, it will
        be added to the `type_to_ix` and `ix_to_type` attributes."""
     result = []
-    for i in xrange(len(input_list) - (self.gram_order - 1)):
+    for i in range(len(input_list) - (self.gram_order - 1)):
       gram = tuple(input_list[i:i+self.gram_order])  # lists are unhashable
       
       if gram not in self.type_to_ix:
@@ -76,11 +74,11 @@ class BaseDataset(object):
     # Put the triples into batches.
     train_batches = [
       self.train_pairs[i:i+batch_size]
-      for i in xrange(0, len(self.train_pairs), batch_size)
+      for i in range(0, len(self.train_pairs), batch_size)
     ]
     valid_batches = [
       self.valid_pairs[i:i+batch_size]
-      for i in xrange(0, len(self.valid_pairs), batch_size)
+      for i in range(0, len(self.valid_pairs), batch_size)
     ]
     # Prune batches with invalid number of inputs
     train_batches = [b for b in train_batches if len(b) == batch_size]

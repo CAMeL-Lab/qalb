@@ -13,7 +13,7 @@ class WhatsAppChats(BaseDataset):
      character-level LM pairs."""
   
   def __init__(self, filename='rafi.txt', **kw):
-    super(WhatsAppChats, self).__init__(**kw)
+    super().__init__(**kw)
     
     with open('data/whatsapp/' + filename) as chat_history_file:
       raw_lines = chat_history_file.readlines()
