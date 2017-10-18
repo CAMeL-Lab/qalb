@@ -11,7 +11,7 @@
    than adding the file names to the `__all__` variable as usual."""
 
 from ai.datasets.base_dataset import BaseDataset
-from ai.datasets.qalb import CharQALB, WordQALB
+from ai.datasets.qalb import QALB
 # TODO: merge these datasets
 #from ai.datasets.text_file import TextFile
 #from ai.datasets.trump_tweets import TrumpTweets

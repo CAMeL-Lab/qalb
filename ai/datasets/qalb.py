@@ -3,7 +3,6 @@
    corrections from native speakers and the L2 dataset of corrections from
    mistakes made by students of Arabic as a foreign language."""
 
-from abc import ABCMeta, abstractmethod
 import io
 import os
 
@@ -43,11 +42,8 @@ def max_length_seq(pairs):
   return [max(map(len, seq)) for seq in zip(*pairs)]
 
 
-class BaseQALB(BaseDataset):
-  """Abstract class for QALB data parsing. This parent class takes care of
-     reading and preprocessing the data files, and children classes can specify
-     different tokenizations (word-based, character-based, etc)."""
-  __metaclass__ = ABCMeta
+class QALB(BaseDataset):
+  """QALB dataset parsing."""
   
   def __init__(self, file_root, max_input_length=None, max_label_length=None,
                extension='', **kw):
@@ -88,6 +84,10 @@ class BaseQALB(BaseDataset):
       self.valid_pairs = self.make_pairs(valid_file.readlines(), valid_labels)
     self.max_valid_lengths = max_length_seq(self.valid_pairs)
   
+  # Override to set the default joining string to not be a whitespace.
+  def untokenize(self, tokens, join_str=''):
+    return super().untokenize(tokens, join_str=join_str)
+  
   def maybe_flatten_gold(self, file_root, force=False):
     """Create and return the contents a provided filename that generates a
        parallel corpus to the inputs, following the corrections provided in the
@@ -95,11 +95,12 @@ class BaseQALB(BaseDataset):
        seq2seq training, and code cannot be borrowed from the evaluation script
        because it never flattens the system output; instead, it finds the
        minimum number of corrections that map the input into the output."""
-    m2_path = file_root + '.m2' + self.extension
     gold_path = file_root + '.gold' + self.extension
     if not force and os.path.exists(gold_path):
       with io.open(gold_path, encoding='utf-8') as gold_file:
         return gold_file.readlines()
+    print("Flattening labels...")
+    m2_path = file_root + '.m2' + self.extension
     with io.open(m2_path, encoding='utf-8') as m2_file:
       raw_m2_data = m2_file.read().split('\n\n')[:-1]  # remove last empty str
     result = []
@@ -107,7 +108,7 @@ class BaseQALB(BaseDataset):
       text = raw_pair.split('\n')[0][2:]  # remove the S marker
       corrections = map(parse_correction, raw_pair.split('\n')[1:])
       result.append(apply_corrections(text, corrections))
-    with io.open(gold_path, encoding='utf-8') as gold_file:
+    with io.open(gold_path, 'w', encoding='utf-8') as gold_file:
       gold_file.writelines(result)
     return result
   
@@ -118,7 +119,6 @@ class BaseQALB(BaseDataset):
        strings, the `tokenize` method will iterate over the strings resulting
        in character-level types. If they are iterables instead, the method will
        use the elements (or their n-grams) as their types."""
-    # This already takes care of making the n-grams their own unique types.
     input_ids = self.tokenize(input_line)
     label_ids = self.tokenize(label_line)
     label_ids.append(self.type_to_ix['_EOS'])
@@ -152,42 +152,10 @@ class BaseQALB(BaseDataset):
         batch[i][1].append(self.type_to_ix['_PAD'])
     return zip(*batch)  # return as (batch_of_inputs, batch_of_labels)
   
-  # TODO: make two different methods for pair making in parent class to avoid
-  # child method with different arguments. One method to make the pairs from
-  # respective train and validation files, and one to make the pairs from a
-  # single file and allowing to specify the ratio of data used for training.
-  # pylint: disable=signature-differs
-  @abstractmethod
-  def make_pairs(self, input_lines, label_lines):
-    """Given the raw input and label text lines, process and save the pairs
-       into attributes. This method must be overriden because it is unclear
-       whether to call the `make_pair` method with words or characters."""
-    pass
-
-
-class CharQALB(BaseQALB):
-  """Character-level data parser for QALB dataset."""
-  
   def make_pairs(self, input_lines, label_lines):
     pairs = []
     for i in range(len(input_lines)):
       input_line = input_lines[i]
       label_line = label_lines[i][:-1]  # remove newline
-      pairs.append(self.make_pair(input_line, label_line))
-    return pairs
-  
-  # Override to set the default joining string to not be a whitespace.
-  def untokenize(self, tokens, join_str=''):
-    return super()
-
-
-class WordQALB(BaseQALB):
-  """Word-level data parser for QALB dataset."""
-  
-  def make_pairs(self, input_lines, label_lines):
-    pairs = []
-    for i in range(len(input_lines)):
-      input_line = input_lines[i].split()
-      label_line = label_lines[i].split()
       pairs.append(self.make_pair(input_line, label_line))
     return pairs
