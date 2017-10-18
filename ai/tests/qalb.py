@@ -1,17 +1,15 @@
 """Testing setup for QALB shared task."""
 
-from __future__ import division, print_function
-
 import io
 import os
 import sys
 import timeit
 
-from six.moves import xrange
 import numpy as np
 import tensorflow as tf
+import editdistance
 
-from ai.datasets import CharQALB
+from ai.datasets import QALB
 from ai.models import Seq2Seq
 
 
@@ -59,18 +57,24 @@ tf.app.flags.DEFINE_string('model_name', None, "Name of the output directory.")
 FLAGS = tf.app.flags.FLAGS
 
 
-def pad_output(outputs):
-  diff = FLAGS.max_sentence_length - np.shape(outputs)[1]
-  if diff:
-    outputs = np.concatenate(outputs, np.zeros(FLAGS.batch_size, diff))
-  return outputs
+def untokenize_batch(dataset, id_batch):
+  """Return the UTF-8 sequences of the given batch of ids."""
+  return [dataset.untokenize(dataset.clean(s)) for s in id_batch]
+
+
+def levenshtein(proposed, gold):
+  """Return the normalized Levenshtein distance of the given strings."""
+  lev_densities = []
+  for x, y in zip(proposed, gold):
+    lev_densities.append(editdistance.eval(x, y) / len(gold))
+  return sum(lev_densities) / len(lev_densities)
 
 
 def train():
   """Run a loop that continuously trains the model."""
   
   print("Building dynamic character-level QALB data...")
-  dataset = CharQALB(
+  dataset = QALB(
     'QALB', extension=FLAGS.extension,
     max_input_length=FLAGS.max_sentence_length,
     max_label_length=FLAGS.max_sentence_length)
@@ -119,7 +123,6 @@ def train():
           sess.run(m.sgd, feed_dict=train_fd)
         else:
           sess.run(m.adam, feed_dict=train_fd)
-      
       print("Global step {0} ({1}s)".format(
         step, timeit.timeit(train_step, number=1)))
       
@@ -130,51 +133,37 @@ def train():
         
         # Run training and validation perplexity and samples
         
-        lr, train_ppx, train_output, p_sample, train_ppx_summ = sess.run([
+        lr, train_ppx, train_output, p_sample, train_summ = sess.run([
           m.lr,
           m.perplexity,
           m.output,
           m.p_sample,
-          m.perplexity_summary,
+          m.summary_op,
         ], feed_dict=train_fd)
         
-        valid_ppx, valid_output, infer_output, valid_ppx_summ = sess.run([
+        valid_ppx, valid_output, infer_output, valid_summ = sess.run([
           m.perplexity,
           m.output,
           m.generative_output,
-          m.perplexity_summary,
+          m.summary_op,
         ], feed_dict=valid_fd)
-        infer_output = infer_output[0].predicted_ids
-        
-        # Something is wrong with the `impute_finished` keywork argument in
-        # TensorFlow's `dynamic_decode`, so we correct lengths here.
-        train_output = pad_output(train_output)
-        valid_output = pad_output(valid_output)
-        infer_output = pad_output(infer_output)
-        print("Train inner dim:", np.shape(train_output)[1])
-        print("Valid inner dim:", np.shape(valid_output)[1])
-        print("Infer inner dim:", np.shape(infer_output)[1])
-        
-        # Run training, validation and inference Levenshtein distances
-        
-        train_lev, train_lev_summ = sess.run(
-          [m.lev_out, m.lev_summary],
-          feed_dict={m.lev_in: train_output, m.labels: train_labels})
-        
-        valid_lev, valid_lev_summ = sess.run(
-          [m.lev_out, m.lev_summary],
-          feed_dict={m.lev_in: valid_output, m.labels: valid_labels})
-        
-        infer_lev, infer_lev_summ = sess.run(
-          [m.lev_out, m.lev_summary],
-          feed_dict={m.lev_in: infer_output, m.labels: valid_labels})
         
         # Write summaries to TensorBoard
-        m.train_writer.add_summary(train_ppx_summ, global_step=step)
-        m.train_writer.add_summary(train_lev_summ, global_step=step)
-        m.valid_writer.add_summary(valid_ppx_summ, global_step=step)
-        m.valid_writer.add_summary(valid_lev_summ, global_step=step)
-        m.infer_writer.add_summary(infer_lev_summ, global_step=step)
+        m.train_writer.add_summary(train_summ, global_step=step)
+        m.valid_writer.add_summary(valid_summ, global_step=step)
+        
+        # Convert data to UTF-8 strings for evaluation and display
+        train_labels = untokenize_batch(dataset, train_labels)
+        train_output = untokenize_batch(dataset, train_output)
+        valid_inputs = untokenize_batch(dataset, valid_inputs)
+        valid_labels = untokenize_batch(dataset, valid_labels)
+        valid_output = untokenize_batch(dataset, valid_output)
+        infer_output = untokenize_batch(dataset, infer_output)
+        
+        # Run training, validation and inference Levenshtein distances
+        train_lev = levenshtein(train_output, train_labels)
+        valid_lev = levenshtein(valid_output, valid_labels)
+        infer_lev = levenshtein(infer_output, valid_labels)
         
         # Display results to stdout
         print("  lr:", lr)
@@ -185,13 +174,13 @@ def train():
         print("  valid_lev:", valid_lev)
         print("  infer_lev:", infer_lev)
         print("Input:")
-        print(dataset.untokenize(valid_inputs[0], join_str=''))
+        print(valid_inputs[0])
         print("Target:")
-        print(dataset.untokenize(valid_labels[0], join_str=''))
+        print(valid_labels[0])
         print("Output with ground truth:")
-        print(dataset.untokenize(valid_output[0], join_str=''))
+        print(valid_output[0])
         print("Decoded output:")
-        print(dataset.untokenize(infer_output[0], join_str=''))
+        print(infer_output[0])
         sys.stdout.flush()
       
       if step % FLAGS.num_steps_per_save == 0:
@@ -212,7 +201,7 @@ def decode():
     max_length = max([len(line) for line in lines])
     
   print("Building dynamic word-level QALB data...")
-  dataset = CharQALB(
+  dataset = QALB(
     'QALB', extension=FLAGS.extension,
     max_input_length=max_length, max_label_length=max_length)
   
@@ -248,8 +237,8 @@ def decode():
         while len(ids) < max_length:
           ids.append(dataset.type_to_ix['_PAD'])
         feed_dict = {m.inputs: [ids], m.temperature: 1.}
-        o_ids = sess.run(m.generative_output[0].sample_id, feed_dict=feed_dict)
-        output = dataset.untokenize(dataset.clean(o_ids[0]), join_str='')
+        output = sess.run(m.generative_output, feed_dict=feed_dict)
+        output = untokenize_batch(dataset, output)[0]
         print('Output:')
         print(output, '\n')
         output_file.write(output)

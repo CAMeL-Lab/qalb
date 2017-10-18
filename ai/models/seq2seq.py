@@ -1,10 +1,7 @@
 """TODO: add descriptive docstring."""
 
-from __future__ import division
-
 import os
 
-from six.moves import xrange
 import tensorflow as tf
 # pylint: disable=no-name-in-module
 from tensorflow.python.layers.core import Dense
@@ -94,17 +91,7 @@ class Seq2Seq(BaseModel):
     # sampling paper (Bengio et al., https://arxiv.org/abs/1506.03099)
     self.p_sample = tf.Variable(
       0., trainable=False, dtype=tf.float32, name='sampling_probability')
-    super(Seq2Seq, self).__init__(**kw)
-  
-  
-  def start(self):
-    super(Seq2Seq, self).start()
-    # Summary writer for generative output
-    infer_dir = os.path.join('output', self.model_name, 'infer')
-    if not self.restore:
-      tf.gfile.MakeDirs(infer_dir)
-    sess = tf.get_default_session()
-    self.infer_writer = tf.summary.FileWriter(infer_dir, graph=sess.graph)
+    super().__init__(**kw)
   
   
   def build_graph(self):
@@ -155,30 +142,11 @@ class Seq2Seq(BaseModel):
       loss = tf.contrib.seq2seq.sequence_loss(logits, self.labels, mask)
     
     self.perplexity = tf.exp(loss, name='perplexity')
-    self.perplexity_summary = tf.summary.scalar('perplexity', self.perplexity)
+    tf.summary.scalar('perplexity', self.perplexity)
     
     # Index outputs (greedy)
     self.output = tf.argmax(
       logits, axis=2, name='output', output_type=tf.int32)
-    
-    # Compute the edit distance for evaluations
-    with tf.name_scope('edit_distance'):
-      tensor_shape = [self.batch_size, self.max_decoder_length]
-      self.lev_in = tf.placeholder(tf.int32, name='lev_in', shape=tensor_shape)
-      # Sparse tensor for inputs
-      lev_in_indices = tf.where(tf.not_equal(self.lev_in, 0))
-      hypothesis = tf.SparseTensor(
-        indices=lev_in_indices,
-        values=tf.gather_nd(self.lev_in, lev_in_indices),
-        dense_shape=tensor_shape)
-      # Sparse tensor for labels
-      labels_indices = tf.where(tf.not_equal(self.lev_in, 0))
-      truth = tf.SparseTensor(
-        indices=labels_indices,
-        values=tf.gather_nd(self.labels, labels_indices),
-        dense_shape=tensor_shape)
-      self.lev_out = tf.reduce_mean(tf.edit_distance(hypothesis, truth))
-    self.lev_summary = tf.summary.scalar('edit_distance', self.lev_out)
     
     # Adam and gradient descent optimizers with norm clipping. This prevents
     # exploding gradients and allows a switch from Adam to SGD when the model
@@ -257,7 +225,7 @@ class Seq2Seq(BaseModel):
     # Only for deep RNN architectures
     if self.rnn_layers > 1:
       encoder_cells = tf.contrib.rnn.MultiRNNCell(
-        [self.rnn_cell() for _ in xrange(self.rnn_layers - 1)])
+        [self.rnn_cell() for _ in range(self.rnn_layers - 1)])
       encoder_output, _ = tf.nn.dynamic_rnn(
         encoder_cells, encoder_output, dtype=tf.float32,
         sequence_length=self.input_lengths)
@@ -268,18 +236,19 @@ class Seq2Seq(BaseModel):
   def build_decoder(self, encoder_output):
     """Build the decoder RNN stack and the final prediction layer."""
     
-    decoder_cells = [self.rnn_cell() for _ in range(self.rnn_layers)]
+    decoder_cell = tf.contrib.rnn.MultiRNNCell(
+      [self.rnn_cell() for _ in range(self.rnn_layers)])
     softmax_layer = Dense(
       self.num_types, name='dense', activation=lambda x: x / self.temperature)
     
     # Decoder for training
     train_decoder = self.get_decoder_instance(
-      encoder_output, decoder_cells, softmax_layer)
+      encoder_output, decoder_cell, softmax_layer)
     train_output = tf.contrib.seq2seq.dynamic_decode(train_decoder)
     
     # Decoder for inference
     infer_decoder = self.get_decoder_instance(
-      encoder_output, decoder_cells, softmax_layer, infer=True)
+      encoder_output, decoder_cell, softmax_layer, infer=True)
     tf.get_variable_scope().reuse_variables()
     infer_output = tf.contrib.seq2seq.dynamic_decode(
       infer_decoder, maximum_iterations=self.max_decoder_length)
@@ -288,12 +257,12 @@ class Seq2Seq(BaseModel):
     return train_output[0].rnn_output, infer_output[0].predicted_ids[:,:,0]
   
   
-  def get_decoder_instance(self, encoder_output, cells, dense, infer=False):
+  def get_decoder_instance(self, encoder_output, cell, dense, infer=False):
     """Return the decoder instance wrapping the built RNNs according to the
        desired mode (training or inference).
        Args:
        `encoder_output`: last layer outputs of the encoder RNN,
-       `cells`: list of RNN cell instances,
+       `cell`: the RNN cell to be used,
        `dense`: the output layer,
        Keyword Args:
        `infer`: set to True to return a decoder for inference."""
@@ -316,27 +285,8 @@ class Seq2Seq(BaseModel):
     elif self.attention == 'luong':
       attention_mechanism = tf.contrib.seq2seq.LuongAttention(
         self.hidden_size, encoder_output, memory_sequence_length=input_lengths)
-    # TODO: maybe allow this to be the last cell
     if self.attention:
-      cells[0] = tf.contrib.seq2seq.AttentionWrapper(
-        cells[0], attention_mechanism)
-    
-    # Build the MultiRNNCell if the architecture is deep
-    if self.rnn_layers > 1:
-      decoder_cell = tf.contrib.rnn.MultiRNNCell(cells)
-    
-    # Get the initial state of the decoder
-    initial_state_pass = encoder_output[:, 0]
-    # TODO: maybe allow this to be the last cell
-    if self.attention:
-      initial_state = tf.contrib.seq2seq.AttentionWrapperState(
-        cell_state=initial_state_pass,
-        attention=tf.zeros([batch_size, self.hidden_size]),
-        alignments=tf.zeros([batch_size, self.max_decoder_length]),
-        time=tf.zeros(()), alignment_history=())
-    if self.rnn_layers > 1:
-      copies = [initial_state_pass for _ in range(self.rnn_layers - 1)]
-      initial_state = tuple([initial_state] + copies)
+      cell = tf.contrib.seq2seq.AttentionWrapper(cell, attention_mechanism)
     
     # Training decoder
     if not infer:
@@ -349,10 +299,12 @@ class Seq2Seq(BaseModel):
         decoder_input, tf.tile([self.max_decoder_length], [batch_size]),
         self.get_embeddings, self.p_sample)
       return tf.contrib.seq2seq.BasicDecoder(
-        decoder_cell, train_helper, initial_state, output_layer=dense)
+        cell, train_helper, cell.zero_state(batch_size, tf.float32),
+        output_layer=dense)
     
     # Inference decoder
     return tf.contrib.seq2seq.BeamSearchDecoder(
-      decoder_cell, self.get_embeddings,
-      tf.tile([self.go_id], [self.batch_size]), self.eos_id, initial_state,
-      self.beam_size, output_layer=dense)
+      cell, self.get_embeddings,
+      tf.tile([self.go_id], [self.batch_size]), self.eos_id,
+      cell.zero_state(batch_size, tf.float32), self.beam_size,
+      output_layer=dense)
