@@ -96,15 +96,19 @@ class Seq2Seq(BaseModel):
   
   def build_graph(self):
     
-    # Placeholders
+    ### Placeholders
     self.inputs = tf.placeholder(
       tf.int32, name='inputs',
       shape=[self.batch_size, self.max_encoder_length])
     self.labels = tf.placeholder(
       tf.int32, name='labels',
       shape=[self.batch_size, self.max_decoder_length])
+    # Optional parameter for decoding
     self.temperature = tf.placeholder_with_default(
       1., name='temperature', shape=[])
+    # Placeholders for Levenshtein distance summaries
+    self.lev = tf.placeholder(tf.float32, name='lev', shape=[])
+    self.infer_lev = tf.placeholder(tf.float32, name='infer_lev', shape=[])
     
     # Sequence lengths - used throughout model
     with tf.name_scope('input_lengths'):
@@ -141,8 +145,11 @@ class Seq2Seq(BaseModel):
       mask = tf.cast(tf.sign(self.labels), tf.float32)
       loss = tf.contrib.seq2seq.sequence_loss(logits, self.labels, mask)
     
+    # Summaries
     self.perplexity = tf.exp(loss, name='perplexity')
-    tf.summary.scalar('perplexity', self.perplexity)
+    self.perplexity_summary = tf.summary.scalar('perplexity', self.perplexity)
+    self.lev_summary = tf.summary.scalar('lev', self.lev)
+    self.infer_lev_summary = tf.summary.scalar('infer_lev', self.infer_lev)
     
     # Index outputs (greedy)
     self.output = tf.argmax(
@@ -270,7 +277,7 @@ class Seq2Seq(BaseModel):
     # These variables need to be tiled for beam search
     batch_size = self.batch_size
     input_lengths = self.input_lengths
-    if infer:
+    if infer and self.beam_size > 1:
       batch_size = self.batch_size * self.beam_size
       input_lengths = tf.contrib.seq2seq.tile_batch(
         input_lengths, multiplier=self.beam_size)
@@ -295,16 +302,21 @@ class Seq2Seq(BaseModel):
         [tf.tile([[self.go_id]], [self.batch_size, 1]), self.labels], 1)
       decoder_input = self.get_embeddings(decoder_ids)
       # Build the schedule sampling helper
-      train_helper = tf.contrib.seq2seq.ScheduledEmbeddingTrainingHelper(
+      helper = tf.contrib.seq2seq.ScheduledEmbeddingTrainingHelper(
         decoder_input, tf.tile([self.max_decoder_length], [batch_size]),
         self.get_embeddings, self.p_sample)
       return tf.contrib.seq2seq.BasicDecoder(
-        cell, train_helper, cell.zero_state(batch_size, tf.float32),
+        cell, helper, cell.zero_state(batch_size, tf.float32),
         output_layer=dense)
     
     # Inference decoder
-    return tf.contrib.seq2seq.BeamSearchDecoder(
-      cell, self.get_embeddings,
-      tf.tile([self.go_id], [self.batch_size]), self.eos_id,
-      cell.zero_state(batch_size, tf.float32), self.beam_size,
-      output_layer=dense)
+    go_tokens = tf.tile([self.go_id], [self.batch_size])
+    initial_state = cell.zero_state(batch_size, tf.float32)
+    if self.beam_size > 1:
+      return tf.contrib.seq2seq.BeamSearchDecoder(
+        cell, self.get_embeddings, go_tokens, self.eos_id, initial_state,
+        self.beam_size, output_layer=dense)
+    helper = tf.contrib.seq2seq.GreedyEmbeddingHelper(
+      self.get_embeddings, go_tokens, self.eos_id)
+    return tf.contrib.seq2seq.BasicDecoder(
+      cell, helper, initial_state, output_layer=dense)

@@ -27,15 +27,14 @@ tf.app.flags.DEFINE_boolean('use_lstm', False, "Set to False to use GRUs.")
 tf.app.flags.DEFINE_boolean('use_residual', False, "Set to True to add the RNN"
                             " inputs to the outputs.")
 tf.app.flags.DEFINE_string('attention', 'luong', "'bahdanau' or 'luong'"
-                           " (default is 'luong')."
-                           " by default).")
+                           " (default is 'luong').")
 tf.app.flags.DEFINE_float('dropout', 1., "Keep probability for dropout on the"
                           "RNNs' non-recurrent connections.")
 tf.app.flags.DEFINE_float('max_grad_norm', 5., "Clip gradients to this norm.")
 tf.app.flags.DEFINE_float('epsilon', 1e-8, "Denominator constant for Adam.")
-tf.app.flags.DEFINE_integer('beam_size', 5, "Beam search size.")
+tf.app.flags.DEFINE_integer('beam_size', 3, "Beam search size.")
 # Set this to > 0 even if no decay
-tf.app.flags.DEFINE_float('p_sample', .3, 'Initial sampling probability.')
+tf.app.flags.DEFINE_float('p_sample', 0, 'Initial sampling probability.')
 tf.app.flags.DEFINE_integer('switch_to_sgd', None, "Set to a number of steps"
                             " to pass for the optimizer to switch to SGD.")
 
@@ -133,24 +132,20 @@ def train():
         
         # Run training and validation perplexity and samples
         
-        lr, train_ppx, train_output, p_sample, train_summ = sess.run([
+        lr, train_ppx, train_output, p_sample, train_ppx_summ = sess.run([
           m.lr,
           m.perplexity,
           m.output,
           m.p_sample,
-          m.summary_op,
+          m.perplexity_summary,
         ], feed_dict=train_fd)
         
-        valid_ppx, valid_output, infer_output, valid_summ = sess.run([
+        valid_ppx, valid_output, infer_output, valid_ppx_summ = sess.run([
           m.perplexity,
           m.output,
           m.generative_output,
-          m.summary_op,
+          m.perplexity_summary,
         ], feed_dict=valid_fd)
-        
-        # Write summaries to TensorBoard
-        m.train_writer.add_summary(train_summ, global_step=step)
-        m.valid_writer.add_summary(valid_summ, global_step=step)
         
         # Convert data to UTF-8 strings for evaluation and display
         train_labels = untokenize_batch(dataset, train_labels)
@@ -164,6 +159,18 @@ def train():
         train_lev = levenshtein(train_output, train_labels)
         valid_lev = levenshtein(valid_output, valid_labels)
         infer_lev = levenshtein(infer_output, valid_labels)
+        
+        train_lev_summ = sess.run(m.lev_summary, feed_dict={m.lev: train_lev})
+        valid_lev_summ = sess.run(m.lev_summary, feed_dict={m.lev: valid_lev})
+        infer_lev_summ = sess.run(
+          m.infer_lev_summary, feed_dict={m.infer_lev: infer_lev})
+        
+        # Write summaries to TensorBoard
+        m.train_writer.add_summary(train_ppx_summ, global_step=step)
+        m.train_writer.add_summary(train_lev_summ, global_step=step)
+        m.valid_writer.add_summary(valid_ppx_summ, global_step=step)
+        m.valid_writer.add_summary(valid_lev_summ, global_step=step)
+        m.valid_writer.add_summary(infer_lev_summ, global_step=step)
         
         # Display results to stdout
         print("  lr:", lr)
