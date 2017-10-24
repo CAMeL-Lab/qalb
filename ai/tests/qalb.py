@@ -45,6 +45,8 @@ tf.app.flags.DEFINE_integer('num_steps_per_eval', 50, "Number of steps to wait"
                             " before running the graph with the dev set.")
 tf.app.flags.DEFINE_integer('num_steps_per_save', 100, "Number of steps"
                             " before saving the trainable variables.")
+tf.app.flags.DEFINE_integer('max_num_steps', 0, "Number of steps to run"
+                            " (default is 0; no limit).")
 tf.app.flags.DEFINE_string('extension', '', "Extensions of data files.")
 tf.app.flags.DEFINE_string('decode', None, "Set to a path to run on a file.")
 tf.app.flags.DEFINE_string('output_path', os.path.join('output', 'result.txt'),
@@ -108,7 +110,8 @@ def train():
       sess.run(tf.assign(m.lr, FLAGS.lr))
     
     print("Entering training loop...")
-    while True:
+    max_steps = FLAGS.max_num_steps
+    while not max_steps or m.global_step.eval() <= max_steps:
       step = m.global_step.eval()
       
       # Gradient descent and backprop
