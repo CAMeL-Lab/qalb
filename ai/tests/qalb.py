@@ -14,9 +14,9 @@ from ai.models import Seq2Seq
 
 
 ### HYPERPARAMETERS
-tf.app.flags.DEFINE_float('lr', 1e-3, "Initial learning rate.")
+tf.app.flags.DEFINE_float('lr', 5e-4, "Initial learning rate.")
 tf.app.flags.DEFINE_integer('batch_size', 64, "Batch size.")
-tf.app.flags.DEFINE_integer('embedding_size', 32, "Embedding dimensionality.")
+tf.app.flags.DEFINE_integer('embedding_size', 64, "Embedding dimensionality.")
 tf.app.flags.DEFINE_integer('hidden_size', 256, "Number of hidden units.")
 tf.app.flags.DEFINE_integer('rnn_layers', 2, "Number of RNN layers.")
 tf.app.flags.DEFINE_boolean('bidirectional_encoder', True, "Whether to use a"

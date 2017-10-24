@@ -131,8 +131,11 @@ class Seq2Seq(BaseModel):
         'kernel', [self.num_types, self.embedding_size],
         trainable=self.train_embeddings, initializer=initializer)
     
-    # Look up the embeddings for the encoder and decoder inputs
-    encoder_input = self.get_embeddings(self.inputs)
+    # Look up the embeddings for the encoder and decoder inputs and project
+    # (essential for residual connections)
+    encoder_input = tf.layers.dense(
+      self.get_embeddings(self.inputs), self.hidden_size,
+      name='embedding_projection')
     
     with tf.variable_scope('encoder'):
       encoder_output = self.build_encoder(encoder_input)
@@ -226,8 +229,7 @@ class Seq2Seq(BaseModel):
         encoder_output = tf.concat([encoder_fw_out, encoder_bw_out], 2)
         if self.bidirectional_mode == 'project':
           encoder_output = tf.layers.dense(
-            encoder_output, self.hidden_size, activation=tf.tanh,
-            name='bidirectional_projection')
+            encoder_output, self.hidden_size, name='bidirectional_projection')
     else:
       encoder_output, _ = tf.nn.dynamic_rnn(
         self.rnn_cell(), encoder_input, dtype=tf.float32,
