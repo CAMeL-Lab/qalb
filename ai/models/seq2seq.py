@@ -188,7 +188,7 @@ class Seq2Seq(BaseModel):
     
     # Allow custom number of hidden units
     if num_units is None:
-      num_units = self.embedding_size
+      num_units = self.hidden_size
     
     # Check to use LSTM or GRU
     if self.use_lstm:
@@ -255,25 +255,25 @@ class Seq2Seq(BaseModel):
     attention_mechanism = None
     if self.attention == 'bahdanau':
       attention_mechanism = tf.contrib.seq2seq.BahdanauAttention(
-        self.embedding_size, encoder_output,
+        self.hidden_size, encoder_output,
         memory_sequence_length=final_encoder_lengths)
     elif self.attention == 'luong':
       attention_mechanism = tf.contrib.seq2seq.LuongAttention(
-        self.embedding_size, encoder_output,
+        self.hidden_size, encoder_output,
         memory_sequence_length=final_encoder_lengths)
     
     decoder_cell = self.rnn_cell(attention_mechanism=attention_mechanism)
     
     # Use the first output of the encoder to learn an initial decoder state
     initial_state_pass = tf.split(tf.layers.dense(
-      encoder_output[:, 0], self.embedding_size * self.rnn_layers,
+      encoder_output[:, 0], self.hidden_size * self.rnn_layers,
       activation=tf.tanh, name='initial_decoder_state'
     ), self.rnn_layers, axis=1)
     
     if self.attention:
       initial_state = tf.contrib.seq2seq.AttentionWrapperState(
         cell_state=initial_state_pass[0],
-        attention=tf.zeros([self.batch_size, self.embedding_size]),
+        attention=tf.zeros([self.batch_size, self.hidden_size]),
         alignments=tf.zeros([self.batch_size, self.max_decoder_length]),
         time=tf.zeros(()), alignment_history=())
     else:
