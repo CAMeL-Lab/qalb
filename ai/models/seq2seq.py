@@ -283,9 +283,8 @@ class Seq2Seq(BaseModel):
     # initial state (maybe with attention) with the rest of the learned states
     if self.rnn_layers > 1:
       decoder_cell = tf.contrib.rnn.MultiRNNCell(
-        [decoder_cell] + [self.rnn_cell()
-                          for _ in range(self.rnn_layers - 1)])
-      initial_state = tuple([initial_state] + list(initial_state_pass[1:]))
+        [self.rnn_cell() for _ in range(self.rnn_layers - 1)] + [decoder_cell])
+      initial_state = tuple(list(initial_state_pass[:-1]) + [initial_state])
     
     # Training decoder with optional scheduled sampling. If sampling occurs,
     # the output will be fed through the final prediction layer and then fed
