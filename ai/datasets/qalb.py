@@ -65,24 +65,18 @@ class QALB(BaseDataset):
     data_dir = os.path.join('ai', 'datasets', 'data', 'qalb')
     # Prepare training data
     train_input_path = os.path.join(
-      data_dir, self.file_root + '.train.orig' + self.extension
-    )
+      data_dir, self.file_root + '.train.orig' + self.extension)
     train_labels = self.maybe_flatten_gold(
-      os.path.join(data_dir, self.file_root + '.train')  # method completes it
-    )
+      os.path.join(data_dir, self.file_root + '.train'))
     with io.open(train_input_path, encoding='utf-8') as train_file:
       self.train_pairs = self.make_pairs(train_file.readlines(), train_labels)
-    self.max_train_lengths = max_length_seq(self.train_pairs)
     # Prepare validation data
     valid_input_path = os.path.join(
-      data_dir, self.file_root + '.dev.orig' + self.extension
-    )
+      data_dir, self.file_root + '.dev.orig' + self.extension)
     valid_labels = self.maybe_flatten_gold(
-      os.path.join(data_dir, self.file_root + '.dev')
-    )
+      os.path.join(data_dir, self.file_root + '.dev'))
     with io.open(valid_input_path, encoding='utf-8') as valid_file:
       self.valid_pairs = self.make_pairs(valid_file.readlines(), valid_labels)
-    self.max_valid_lengths = max_length_seq(self.valid_pairs)
   
   # Override to set the default joining string to not be a whitespace.
   def untokenize(self, tokens, join_str=''):
@@ -112,28 +106,28 @@ class QALB(BaseDataset):
       gold_file.writelines(result)
     return result
   
-  def make_pair(self, input_line, label_line):
-    """Given an input and label in text or list form, convert the n-grams to
-       their unique type id's. This also takes care of padding and adding
-       other tokens that are helpful for the decoder RNN. If the arguments are
-       strings, the `tokenize` method will iterate over the strings resulting
-       in character-level types. If they are iterables instead, the method will
-       use the elements (or their n-grams) as their types."""
-    input_ids = self.tokenize(input_line)
-    label_ids = self.tokenize(label_line)
-    label_ids.append(self.type_to_ix['_EOS'])
-    return input_ids, label_ids
+  def pad_batch(self, batch):
+    """Pad the given batch with zeros."""
+    max_input_length = self.max_input_length
+    max_label_length = self.max_label_length
+    if max_input_length is None or max_label_length is None:
+      max_input_length, max_label_length = max_length_seq(batch)
+    for i in range(len(batch)):
+      while len(batch[i][0]) < max_input_length:
+        batch[i][0].append(self.type_to_ix['_PAD'])
+      while len(batch[i][1]) < max_label_length:
+        batch[i][1].append(self.type_to_ix['_PAD'])
+    return batch
   
-  def get_batch(self, batch_size, draw_from_valid=False):
-    """Draw random examples and pad them to the largest sequence drawn.
-       The batch can be drawn from the validation set if the keyowrd argument
-       `draw_from_valid` is set to True."""
+  # Override this to pad the batches
+  def get_train_batches(self, batch_size):
+    return list(map(self.pad_batch, super().get_train_batches(batch_size)))
+  
+  def get_valid_batch(self, batch_size):
+    """Draw random examples and pad them to the largest sequence drawn."""
     batch = []
     while len(batch) < batch_size:
-      if draw_from_valid:
-        sequence = self.valid_pairs[np.random.randint(len(self.valid_pairs))]
-      else:
-        sequence = self.train_pairs[np.random.randint(len(self.train_pairs))]
+      sequence = self.valid_pairs[np.random.randint(len(self.valid_pairs))]
       # Optionally discard examples past a maximum input or label length
       input_ok = self.max_input_length is None \
                  or len(sequence[0]) <= self.max_input_length
@@ -141,21 +135,17 @@ class QALB(BaseDataset):
                  or len(sequence[1]) <= self.max_label_length
       if input_ok and label_ok:
         batch.append(sequence)
-    for i in range(batch_size):
-      max_input_length = self.max_input_length
-      max_label_length = self.max_label_length
-      if max_input_length is None or max_label_length is None:
-        max_input_length, max_label_length = max_length_seq(batch)
-      while len(batch[i][0]) < max_input_length:
-        batch[i][0].append(self.type_to_ix['_PAD'])
-      while len(batch[i][1]) < max_label_length:
-        batch[i][1].append(self.type_to_ix['_PAD'])
-    return zip(*batch)  # return as (batch_of_inputs, batch_of_labels)
+    return zip(*self.pad_batch(batch))
   
   def make_pairs(self, input_lines, label_lines):
     pairs = []
     for i in range(len(input_lines)):
       input_line = input_lines[i]
       label_line = label_lines[i][:-1]  # remove newline
-      pairs.append(self.make_pair(input_line, label_line))
+      if len(input_line) <= self.max_input_length and \
+         len(label_line) <= self.max_label_length - 1:  # eos token
+        _input = self.tokenize(input_line)
+        label = self.tokenize(label_line)
+        label.append(self.type_to_ix['_EOS'])
+        pairs.append((_input, label))
     return pairs

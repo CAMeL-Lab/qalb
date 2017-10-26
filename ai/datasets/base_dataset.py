@@ -20,7 +20,7 @@ class BaseDataset(object):
     """Keyword arguments:
        `max_types`: an upper bound for the vocabulary size (no bound if falsy),
        `gram_order`: number of original types in the n-gram,
-       `shuffle`: whether to shuffle the list of generated triples."""
+       `shuffle`: whether to shuffle the list of input/label pairs."""
     self.max_types = max_types
     self.gram_order = gram_order
     self.shuffle = shuffle
@@ -63,27 +63,16 @@ class BaseDataset(object):
     return tokens
   
   def untokenize(self, tokens, join_str=' '):
-    """Converts the argument list of integer ids back to a string."""
+    """Convert the argument list of integer ids back to a string."""
     return join_str.join([self.ix_to_type[t][0] for t in tokens])
   
-  def get_batches(self, batch_size):
-    """Groups the triples into batches, and allows randomized order."""
+  def get_train_batches(self, batch_size):
+    """Group the pairs into batches, and allows randomized order."""
     if self.shuffle:
       random.shuffle(self.train_pairs)
-      random.shuffle(self.valid_pairs)
-    # Put the triples into batches.
-    train_batches = [
-      self.train_pairs[i:i+batch_size]
-      for i in range(0, len(self.train_pairs), batch_size)
-    ]
-    valid_batches = [
-      self.valid_pairs[i:i+batch_size]
-      for i in range(0, len(self.valid_pairs), batch_size)
-    ]
-    # Prune batches with invalid number of inputs
-    train_batches = [b for b in train_batches if len(b) == batch_size]
-    valid_batches = [b for b in valid_batches if len(b) == batch_size]
-    return zip(train_batches, valid_batches)
+    end = (len(self.train_pairs) // batch_size) * batch_size
+    return [
+      self.train_pairs[i:i+batch_size] for i in range(0, end, batch_size)]
   
   def num_types(self):
     """Return the number of unique n-grams in the dataset."""

@@ -45,8 +45,8 @@ tf.app.flags.DEFINE_integer('num_steps_per_eval', 50, "Number of steps to wait"
                             " before running the graph with the dev set.")
 tf.app.flags.DEFINE_integer('num_steps_per_save', 100, "Number of steps"
                             " before saving the trainable variables.")
-tf.app.flags.DEFINE_integer('max_num_steps', 0, "Number of steps to run"
-                            " (default is 0; no limit).")
+tf.app.flags.DEFINE_integer('max_epochs', 20, "Number of epochs to run"
+                            " (0 = no limit).")
 tf.app.flags.DEFINE_string('extension', '', "Extensions of data files.")
 tf.app.flags.DEFINE_string('decode', None, "Set to a path to run on a file.")
 tf.app.flags.DEFINE_string('output_path', os.path.join('output', 'result.txt'),
@@ -76,7 +76,7 @@ def train():
   
   print("Building dynamic character-level QALB data...")
   dataset = QALB(
-    'QALB', extension=FLAGS.extension,
+    'QALB', extension=FLAGS.extension, shuffle=True,
     max_input_length=FLAGS.max_sentence_length,
     max_label_length=FLAGS.max_sentence_length)
   
@@ -112,95 +112,107 @@ def train():
     if sess.run(m.p_sample) == 0:
       sess.run(tf.assign(m.p_sample, FLAGS.p_sample))
     
-    print("Entering training loop...")
-    max_steps = FLAGS.max_num_steps
-    while not max_steps or m.global_step.eval() <= max_steps:
-      step = m.global_step.eval()
-      
-      # Gradient descent and backprop
-      # TODO: add lr decays
-      train_inputs, train_labels = dataset.get_batch(FLAGS.batch_size)
-      train_fd = {m.inputs: train_inputs, m.labels: train_labels}
-      
-      # Wrap into function to measure running time
-      def train_step():
-        if FLAGS.switch_to_sgd and step >= FLAGS.switch_to_sgd:
-          sess.run(m.sgd, feed_dict=train_fd)
-        else:
-          sess.run(m.adam, feed_dict=train_fd)
-      print("Global step {0} ({1}s)".format(
-        step, timeit.timeit(train_step, number=1)))
-      
-      if step % FLAGS.num_steps_per_eval == 0:
-        valid_inputs, valid_labels = dataset.get_batch(
-          FLAGS.batch_size, draw_from_valid=True)
-        valid_fd = {m.inputs: valid_inputs, m.labels: valid_labels}
+    # Get the number of epochs that have passed (easier by getting batches now)
+    step = m.global_step.eval()
+    batches = dataset.get_train_batches(m.batch_size)
+    epoch = step // len(batches)
+    
+    while not FLAGS.max_epochs or epoch <= FLAGS.max_epochs:
+      print("=====EPOCH {}=====".format(epoch))
+      sys.stdout.flush()
+      while step < (epoch + 1) * len(batches):
+        step = m.global_step.eval()
         
-        # Run training and validation perplexity and samples
+        # Gradient descent and backprop
+        # TODO: add lr decays
+        train_inputs, train_labels = zip(*batches[step % len(batches)])
+        train_fd = {m.inputs: train_inputs, m.labels: train_labels}
         
-        lr, train_ppx, train_output, p_sample, train_ppx_summ = sess.run([
-          m.lr,
-          m.perplexity,
-          m.output,
-          m.p_sample,
-          m.perplexity_summary,
-        ], feed_dict=train_fd)
+        # Wrap into function to measure running time
+        def train_step():
+          if FLAGS.switch_to_sgd and step >= FLAGS.switch_to_sgd:
+            sess.run(m.sgd, feed_dict=train_fd)
+          else:
+            sess.run(m.adam, feed_dict=train_fd)
         
-        valid_ppx, valid_output, infer_output, valid_ppx_summ = sess.run([
-          m.perplexity,
-          m.output,
-          m.generative_output,
-          m.perplexity_summary,
-        ], feed_dict=valid_fd)
+        print("Global step {0} ({1}s)".format(
+          step, timeit.timeit(train_step, number=1)))
         
-        # Convert data to UTF-8 strings for evaluation and display
-        train_labels = untokenize_batch(dataset, train_labels)
-        train_output = untokenize_batch(dataset, train_output)
-        valid_inputs = untokenize_batch(dataset, valid_inputs)
-        valid_labels = untokenize_batch(dataset, valid_labels)
-        valid_output = untokenize_batch(dataset, valid_output)
-        infer_output = untokenize_batch(dataset, infer_output)
+        if step % FLAGS.num_steps_per_eval == 0:
+          valid_inputs, valid_labels = dataset.get_valid_batch(m.batch_size)
+          valid_fd = {m.inputs: valid_inputs, m.labels: valid_labels}
+          
+          # Run training and validation perplexity and samples
+          
+          lr, train_ppx, train_output, p_sample, train_ppx_summ = sess.run([
+            m.lr,
+            m.perplexity,
+            m.output,
+            m.p_sample,
+            m.perplexity_summary,
+          ], feed_dict=train_fd)
+          
+          valid_ppx, valid_output, infer_output, valid_ppx_summ = sess.run([
+            m.perplexity,
+            m.output,
+            m.generative_output,
+            m.perplexity_summary,
+          ], feed_dict=valid_fd)
+          
+          # Convert data to UTF-8 strings for evaluation and display
+          train_labels = untokenize_batch(dataset, train_labels)
+          train_output = untokenize_batch(dataset, train_output)
+          valid_inputs = untokenize_batch(dataset, valid_inputs)
+          valid_labels = untokenize_batch(dataset, valid_labels)
+          valid_output = untokenize_batch(dataset, valid_output)
+          infer_output = untokenize_batch(dataset, infer_output)
+          
+          # Run training, validation and inference Levenshtein distances
+          train_lev = levenshtein(train_output, train_labels)
+          valid_lev = levenshtein(valid_output, valid_labels)
+          infer_lev = levenshtein(infer_output, valid_labels)
+          
+          train_lev_summ = sess.run(
+            m.lev_summary, feed_dict={m.lev: train_lev})
+          valid_lev_summ = sess.run(
+            m.lev_summary, feed_dict={m.lev: valid_lev})
+          infer_lev_summ = sess.run(
+            m.infer_lev_summary, feed_dict={m.infer_lev: infer_lev})
+          
+          # Write summaries to TensorBoard
+          m.train_writer.add_summary(train_ppx_summ, global_step=step)
+          m.train_writer.add_summary(train_lev_summ, global_step=step)
+          m.valid_writer.add_summary(valid_ppx_summ, global_step=step)
+          m.valid_writer.add_summary(valid_lev_summ, global_step=step)
+          m.valid_writer.add_summary(infer_lev_summ, global_step=step)
+          
+          # Display results to stdout
+          print("  lr:", lr)
+          print("  p_sample:", p_sample)
+          print("  train_ppx:", train_ppx)
+          print("  train_lev:", train_lev)
+          print("  valid_ppx:", valid_ppx)
+          print("  valid_lev:", valid_lev)
+          print("  infer_lev:", infer_lev)
+          print("Input:")
+          print(valid_inputs[0])
+          print("Target:")
+          print(valid_labels[0])
+          print("Output with ground truth:")
+          print(valid_output[0])
+          print("Decoded output:")
+          print(infer_output[0])
         
-        # Run training, validation and inference Levenshtein distances
-        train_lev = levenshtein(train_output, train_labels)
-        valid_lev = levenshtein(valid_output, valid_labels)
-        infer_lev = levenshtein(infer_output, valid_labels)
+        if step % FLAGS.num_steps_per_save == 0:
+          print("Saving model...")
+          m.save()
+          print("Model saved. Resuming training...")
         
-        train_lev_summ = sess.run(m.lev_summary, feed_dict={m.lev: train_lev})
-        valid_lev_summ = sess.run(m.lev_summary, feed_dict={m.lev: valid_lev})
-        infer_lev_summ = sess.run(
-          m.infer_lev_summary, feed_dict={m.infer_lev: infer_lev})
-        
-        # Write summaries to TensorBoard
-        m.train_writer.add_summary(train_ppx_summ, global_step=step)
-        m.train_writer.add_summary(train_lev_summ, global_step=step)
-        m.valid_writer.add_summary(valid_ppx_summ, global_step=step)
-        m.valid_writer.add_summary(valid_lev_summ, global_step=step)
-        m.valid_writer.add_summary(infer_lev_summ, global_step=step)
-        
-        # Display results to stdout
-        print("  lr:", lr)
-        print("  p_sample:", p_sample)
-        print("  train_ppx:", train_ppx)
-        print("  train_lev:", train_lev)
-        print("  valid_ppx:", valid_ppx)
-        print("  valid_lev:", valid_lev)
-        print("  infer_lev:", infer_lev)
-        print("Input:")
-        print(valid_inputs[0])
-        print("Target:")
-        print(valid_labels[0])
-        print("Output with ground truth:")
-        print(valid_output[0])
-        print("Decoded output:")
-        print(infer_output[0])
         sys.stdout.flush()
       
-      if step % FLAGS.num_steps_per_save == 0:
-        print("Saving model...")
-        m.save()
-        print("Model saved. Resuming training...")
-        sys.stdout.flush()
+      # Epoch about to be done - reshuffle the data and get new batches
+      batches = dataset.get_train_batches(m.batch_size)
+      epoch += 1
 
 
 def decode():
