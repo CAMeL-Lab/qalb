@@ -105,9 +105,12 @@ def train():
     print("Initializing or restoring model...")
     m.start()
     
-    # If the model was not restored, set lr to the provided initial value
+    # If the model was not restored, set variable hyperparameters to their
+    # provided initial values
     if sess.run(m.lr) == 0:
       sess.run(tf.assign(m.lr, FLAGS.lr))
+    if sess.run(m.p_sample) == 0:
+      sess.run(tf.assign(m.p_sample, FLAGS.p_sample))
     
     print("Entering training loop...")
     max_steps = FLAGS.max_num_steps
