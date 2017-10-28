@@ -67,7 +67,7 @@ def levenshtein(proposed, gold):
   """Return the normalized Levenshtein distance of the given strings."""
   lev_densities = []
   for x, y in zip(proposed, gold):
-    lev_densities.append(editdistance.eval(x, y) / len(gold))
+    lev_densities.append(editdistance.eval(x, y) / len(y))
   return sum(lev_densities) / len(lev_densities)
 
 
@@ -263,9 +263,9 @@ def decode():
           ids.append(dataset.type_to_ix['_PAD'])
         feed_dict = {m.inputs: [ids], m.temperature: 1.}
         output = sess.run(m.generative_output, feed_dict=feed_dict)
-        output = untokenize_batch(dataset, output)[0]
+        output = untokenize_batch(dataset, output)[0] + '\n'
         print('Output:')
-        print(output, '\n')
+        print(output)
         output_file.write(output)
 
 
