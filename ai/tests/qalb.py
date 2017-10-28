@@ -16,7 +16,7 @@ from ai.models import Seq2Seq
 ### HYPERPARAMETERS
 tf.app.flags.DEFINE_float('lr', 5e-4, "Initial learning rate.")
 tf.app.flags.DEFINE_integer('batch_size', 64, "Batch size.")
-tf.app.flags.DEFINE_integer('embedding_size', 64, "Embedding dimensionality.")
+tf.app.flags.DEFINE_integer('embedding_size', 128, "Embedding dimensionality.")
 tf.app.flags.DEFINE_integer('hidden_size', 256, "Number of hidden units.")
 tf.app.flags.DEFINE_integer('rnn_layers', 2, "Number of RNN layers.")
 tf.app.flags.DEFINE_boolean('bidirectional_encoder', True, "Whether to use a"
@@ -34,8 +34,8 @@ tf.app.flags.DEFINE_float('max_grad_norm', 5., "Clip gradients to this norm.")
 tf.app.flags.DEFINE_float('epsilon', 1e-8, "Denominator constant for Adam.")
 tf.app.flags.DEFINE_integer('beam_size', 3, "Beam search size.")
 # Set this to > 0 even if no decay
-tf.app.flags.DEFINE_float('p_sample', 0, 'Initial sampling probability.')
-tf.app.flags.DEFINE_integer('switch_to_sgd', None, "Set to a number of steps"
+tf.app.flags.DEFINE_float('p_sample', .3, 'Initial sampling probability.')
+tf.app.flags.DEFINE_integer('switch_to_sgd', None, "Set to a number of epochs"
                             " to pass for the optimizer to switch to SGD.")
 
 ### CONFIG
@@ -130,7 +130,7 @@ def train():
         
         # Wrap into function to measure running time
         def train_step():
-          if FLAGS.switch_to_sgd and step >= FLAGS.switch_to_sgd:
+          if FLAGS.switch_to_sgd and epoch >= FLAGS.switch_to_sgd:
             sess.run(m.sgd, feed_dict=train_fd)
           else:
             sess.run(m.adam, feed_dict=train_fd)
