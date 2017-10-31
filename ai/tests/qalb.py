@@ -14,7 +14,7 @@ from ai.models import Seq2Seq
 
 
 ### HYPERPARAMETERS
-tf.app.flags.DEFINE_float('lr', 5e-4, "Initial learning rate.")
+tf.app.flags.DEFINE_float('lr', 1e-4, "Initial learning rate.")
 tf.app.flags.DEFINE_integer('batch_size', 64, "Batch size.")
 tf.app.flags.DEFINE_integer('embedding_size', 128, "Embedding dimensionality.")
 tf.app.flags.DEFINE_integer('hidden_size', 256, "Number of hidden units.")
@@ -28,7 +28,7 @@ tf.app.flags.DEFINE_boolean('use_residual', False, "Set to True to add the RNN"
                             " inputs to the outputs.")
 tf.app.flags.DEFINE_string('attention', 'luong', "'bahdanau' or 'luong'"
                            " (default is 'luong').")
-tf.app.flags.DEFINE_float('dropout', 1., "Keep probability for dropout on the"
+tf.app.flags.DEFINE_float('dropout', .7, "Keep probability for dropout on the"
                           "RNNs' non-recurrent connections.")
 tf.app.flags.DEFINE_float('max_grad_norm', 5., "Clip gradients to this norm.")
 tf.app.flags.DEFINE_float('epsilon', 1e-8, "Denominator constant for Adam.")
