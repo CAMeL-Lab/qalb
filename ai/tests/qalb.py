@@ -17,7 +17,7 @@ from ai.models import Seq2Seq
 tf.app.flags.DEFINE_float('lr', 5e-4, "Initial learning rate.")
 tf.app.flags.DEFINE_integer('batch_size', 64, "Batch size.")
 tf.app.flags.DEFINE_integer('embedding_size', 128, "Embedding dimensionality.")
-tf.app.flags.DEFINE_integer('hidden_size', 512, "Number of hidden units.")
+tf.app.flags.DEFINE_integer('hidden_size', 256, "Number of hidden units.")
 tf.app.flags.DEFINE_integer('rnn_layers', 2, "Number of RNN layers.")
 tf.app.flags.DEFINE_boolean('bidirectional_encoder', True, "Whether to use a"
                             " bidirectional RNN in the encoder's 1st layer.")
@@ -33,8 +33,9 @@ tf.app.flags.DEFINE_float('dropout', .6, "Keep probability for dropout on the"
 tf.app.flags.DEFINE_float('max_grad_norm', 5., "Clip gradients to this norm.")
 tf.app.flags.DEFINE_float('epsilon', 1e-8, "Denominator constant for Adam.")
 tf.app.flags.DEFINE_integer('beam_size', 3, "Beam search size.")
+tf.app.flags.DEFINE_float('temperature', 1., "Clip gradients to this norm.")
 # Set this to > 0 even if no decay
-tf.app.flags.DEFINE_float('p_sample', .3, 'Initial sampling probability.')
+tf.app.flags.DEFINE_float('p_sample', .3, 'Decoding temperature.')
 tf.app.flags.DEFINE_integer('switch_to_sgd', None, "Set to a number of epochs"
                             " to pass for the optimizer to switch to SGD.")
 
@@ -45,7 +46,7 @@ tf.app.flags.DEFINE_integer('num_steps_per_eval', 50, "Number of steps to wait"
                             " before running the graph with the dev set.")
 tf.app.flags.DEFINE_integer('num_steps_per_save', 100, "Number of steps"
                             " before saving the trainable variables.")
-tf.app.flags.DEFINE_integer('max_epochs', 20, "Number of epochs to run"
+tf.app.flags.DEFINE_integer('max_epochs', 15, "Number of epochs to run"
                             " (0 = no limit).")
 tf.app.flags.DEFINE_string('extension', '', "Extensions of data files.")
 tf.app.flags.DEFINE_string('decode', None, "Set to a path to run on a file.")
@@ -253,19 +254,15 @@ def decode():
     print("Restoring model...")
     m.start()
     print("Restored model (global step {})".format(m.global_step.eval()))
-    
+    print(FLAGS.temperature)
     with io.open(FLAGS.output_path, 'w', encoding='utf-8') as output_file:
       for line in lines:
-        print('Input:')
-        print(line)
         ids = dataset.tokenize(line)
         while len(ids) < max_length:
           ids.append(dataset.type_to_ix['_PAD'])
-        feed_dict = {m.inputs: [ids], m.temperature: 1.}
+        feed_dict = {m.inputs: [ids], m.temperature: FLAGS.temperature}
         output = sess.run(m.generative_output, feed_dict=feed_dict)
         output = untokenize_batch(dataset, output)[0] + '\n'
-        print('Output:')
-        print(output)
         output_file.write(output)
 
 
