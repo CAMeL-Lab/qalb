@@ -5,6 +5,7 @@
 
 import io
 import os
+import re
 
 import numpy as np
 
@@ -46,13 +47,14 @@ class QALB(BaseDataset):
   """QALB dataset parsing."""
   
   def __init__(self, file_root, max_input_length=None, max_label_length=None,
-               extension='', **kw):
+               parse_repeated=False, extension='', **kw):
     """Arguments:
        `file_root`: the root name of the files in the data/qalb directory.
         The constructor searches for .*.orig, .*.m2, where * is train and dev.
        Keyword arguments:
        `max_input_length`: maximum sequence length for the inputs,
        `max_label_length`: maximum sequence length for the labels,
+       `parse_repeated`: e.g. convert `abababab` to `<ab>4`,
        `extension`: name of the data file extensions,
        Note on usage: to account for the _GO and _EOS tokens that the labels
        have inserted, if the maximum length sequences are in the labels, use
@@ -61,6 +63,7 @@ class QALB(BaseDataset):
     self.file_root = file_root
     self.max_input_length = max_input_length
     self.max_label_length = max_label_length
+    self.parse_repeated = parse_repeated
     self.extension = extension
     data_dir = os.path.join('ai', 'datasets', 'data', 'qalb')
     # Prepare training data
@@ -80,7 +83,11 @@ class QALB(BaseDataset):
   
   # Override to set the default joining string to not be a whitespace.
   def untokenize(self, tokens, join_str=''):
-    return super().untokenize(tokens, join_str=join_str)
+    result = super().untokenize(tokens, join_str=join_str)
+    if not self.parse_repeated:
+      return result
+    repl = lambda m: m.group(1)[1:-1] * int(m.group(2))
+    return re.sub(r'(<[^>]+>)([0-9]+)', repl, result)
   
   def maybe_flatten_gold(self, file_root, force=False):
     """Create and return the contents a provided filename that generates a
@@ -137,11 +144,19 @@ class QALB(BaseDataset):
         batch.append(sequence)
     return zip(*self.pad_batch(batch))
   
+  def shorten_repetitions(self, line):
+    """If a pattern is seen at least 4 times contiguously, replace it with
+       "pat...pat" (n times) -> "<pat>n"."""
+    if not self.parse_repeated:
+      return line
+    repl = lambda m:'<{}>{}'.format(m.group(1), len(m.group()) // len(m.group(1)))
+    return re.sub(r'(.+?)\1{3,}', repl, line)
+  
   def make_pairs(self, input_lines, label_lines):
     pairs = []
     for i in range(len(input_lines)):
-      input_line = input_lines[i]
-      label_line = label_lines[i][:-1]  # remove newline
+      input_line = self.shorten_repetitions(input_lines[i])
+      label_line = self.shorten_repetitions(label_lines[i][:-1])  # no newline
       if len(input_line) <= self.max_input_length and \
          len(label_line) <= self.max_label_length - 1:  # eos token
         _input = self.tokenize(input_line)

@@ -33,10 +33,11 @@ tf.app.flags.DEFINE_float('dropout', .6, "Keep probability for dropout on the"
 tf.app.flags.DEFINE_float('max_grad_norm', 5., "Clip gradients to this norm.")
 tf.app.flags.DEFINE_float('epsilon', 1e-8, "Denominator constant for Adam.")
 tf.app.flags.DEFINE_integer('beam_size', 3, "Beam search size.")
-# Set this to > 0 even if no decay
 tf.app.flags.DEFINE_float('p_sample', .3, 'Initial sampling probability.')
 tf.app.flags.DEFINE_integer('switch_to_sgd', None, "Set to a number of epochs"
                             " to pass for the optimizer to switch to SGD.")
+tf.app.flags.DEFINE_boolean('parse_repeated', False, "Set to True to compress"
+                            " contiguous patterns in the data pipeline.")
 
 ### CONFIG
 tf.app.flags.DEFINE_integer('max_sentence_length', 400, "Max. word length of"
@@ -76,8 +77,8 @@ def train():
   
   print("Building dynamic character-level QALB data...")
   dataset = QALB(
-    'QALB', extension=FLAGS.extension, shuffle=True,
-    max_input_length=FLAGS.max_sentence_length,
+    'QALB', parse_repeated=FLAGS.parse_repeated, extension=FLAGS.extension,
+    shuffle=True, max_input_length=FLAGS.max_sentence_length,
     max_label_length=FLAGS.max_sentence_length)
   
   print("Building computational graph...")
@@ -227,7 +228,7 @@ def decode():
     
   print("Building dynamic word-level QALB data...")
   dataset = QALB(
-    'QALB', extension=FLAGS.extension,
+    'QALB', parse_repeated=FLAGS.parse_repeated, extension=FLAGS.extension,
     max_input_length=max_length, max_label_length=max_length)
   
   print("Building computational graph...")
