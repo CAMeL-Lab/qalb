@@ -5,7 +5,6 @@ import os
 import tensorflow as tf
 # pylint: disable=no-name-in-module
 from tensorflow.python.layers.core import Dense
-from tensorflow.python.ops.init_ops import Initializer
 
 from ai.models import BaseModel
 
@@ -21,11 +20,9 @@ class Seq2Seq(BaseModel):
   def __init__(self, num_types=0, max_encoder_length=99, max_decoder_length=99,
                pad_id=0, eos_id=1, go_id=2,
                batch_size=32, embedding_size=32, hidden_size=256, rnn_layers=2,
-               train_embeddings=True, default_embedding_matrix=None,
                bidirectional_encoder=False, bidirectional_mode='add',
                use_lstm=False, use_residual=False, attention=None,
-               feed_inputs=False, dropout=1.,
-               max_grad_norm=5., epsilon=1e-8, beam_size=1, **kw):
+               dropout=1., max_grad_norm=5., epsilon=1e-8, beam_size=1, **kw):
     """Keyword args:
        `num_types`: number of unique types (e.g. vocabulary or alphabet size),
        `max_encoder_length`: max length of the encoder,
@@ -37,9 +34,6 @@ class Seq2Seq(BaseModel):
        `embedding_size`: dimensionality of the embeddings,
        `hidden_size`: dimensionality of the hidden units for the RNNs,
        `rnn_layers`: number of RNN layers for the encoder and decoder,
-       `train_embeddings`: whether to do backprop on the embeddings,
-       `default_embedding_matrix`: if None, set to a random uniform
-        distribution with mean 0 and variance 1,
        `bidirectional_encoder`: whether to use a bidirectional encoder RNN,
        `bidirectional_mode`: string for the bidirectional RNN architecture:
         'add' (default): add the forward and backward hidden states,
@@ -53,11 +47,6 @@ class Seq2Seq(BaseModel):
        `use_residual`: whether to use residual connections between RNN cells
         (Wu et al., https://arxiv.org/pdf/1609.08144.pdf),
        `attention`: 'bahdanau', or 'luong' (none by default),
-       
-       # TODO: implement this feature
-       `feed_inputs`: set to True to feed attention-based inputs to the
-        decoder RNN (Luong et al., https://arxiv.org/abs/1508.04025),
-        
        `dropout`: keep probability for the non-recurrent connections between
         RNN cells. Defaults to 1.0; i.e. no dropout,
        `max_grad_norm`: clip gradients to maximally this norm,
@@ -71,15 +60,12 @@ class Seq2Seq(BaseModel):
     self.batch_size = batch_size
     self.embedding_size = embedding_size
     self.hidden_size = hidden_size
-    self.train_embeddings = train_embeddings
-    self.default_embedding_matrix = default_embedding_matrix
     self.rnn_layers = rnn_layers
     self.bidirectional_encoder = bidirectional_encoder
     self.bidirectional_mode = bidirectional_mode
     self.use_lstm = use_lstm
     self.use_residual = use_residual
     self.attention = attention
-    self.feed_inputs = feed_inputs
     self.dropout = dropout
     self.max_grad_norm = max_grad_norm
     self.epsilon = epsilon
@@ -103,9 +89,6 @@ class Seq2Seq(BaseModel):
     self.labels = tf.placeholder(
       tf.int32, name='labels',
       shape=[self.batch_size, self.max_decoder_length])
-    # Optional parameter for decoding
-    self.temperature = tf.placeholder_with_default(
-      1., name='temperature', shape=[])
     # Placeholders for Levenshtein distance summaries
     self.lev = tf.placeholder(tf.float32, name='lev', shape=[])
     self.infer_lev = tf.placeholder(tf.float32, name='infer_lev', shape=[])
@@ -117,19 +100,10 @@ class Seq2Seq(BaseModel):
     
     # Embedding matrix
     with tf.variable_scope('embeddings'):
-      if self.default_embedding_matrix is not None:
-        if isinstance(self.default_embedding_matrix, Initializer):
-          initializer = self.default_embedding_matrix
-        else:
-          initializer = tf.constant_initializer(self.default_embedding_matrix)
-      else:
-        sq3 = 3 ** .5  # Uniform(-sqrt3, sqrt3) has variance 1
-        # pylint: disable=redefined-variable-type
-        initializer = tf.random_uniform_initializer(minval=-sq3, maxval=sq3)
-      
+      sq3 = 3 ** .5  # Uniform(-sqrt3, sqrt3) has variance 1
       self.embedding_kernel = tf.get_variable(
         'kernel', [self.num_types, self.embedding_size],
-        trainable=self.train_embeddings, initializer=initializer)
+        initializer=tf.random_uniform_initializer(minval=-sq3, maxval=sq3))
     
     # Look up the embeddings for the encoder and decoder inputs and project
     # (essential for residual connections)
@@ -295,8 +269,7 @@ class Seq2Seq(BaseModel):
     sampling_helper = tf.contrib.seq2seq.ScheduledEmbeddingTrainingHelper(
       decoder_input, tf.tile([self.max_decoder_length], [self.batch_size]),
       self.get_embeddings, self.p_sample)
-    dense = Dense(
-      self.num_types, name='dense', activation=lambda x: x / self.temperature)
+    dense = Dense(self.num_types, name='dense')
     decoder = tf.contrib.seq2seq.BasicDecoder(
       decoder_cell, sampling_helper, initial_state, output_layer=dense)
     decoder_output = tf.contrib.seq2seq.dynamic_decode(decoder)
