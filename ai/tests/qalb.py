@@ -64,11 +64,14 @@ def untokenize_batch(dataset, id_batch):
   return [dataset.untokenize(dataset.clean(s)) for s in id_batch]
 
 
-def levenshtein(proposed, gold):
+def levenshtein(proposed, gold, normalize=False):
   """Return the normalized Levenshtein distance of the given strings."""
   lev_densities = []
   for x, y in zip(proposed, gold):
-    lev_densities.append(editdistance.eval(x, y) / len(y))
+    score = editdistance.eval(x, y)
+    if normalize:
+      score /= len(y)
+    lev_densities.append(score)
   return sum(lev_densities) / len(lev_densities)
 
 
@@ -161,47 +164,40 @@ def train():
           ], feed_dict=valid_fd)
           
           # Convert data to UTF-8 strings for evaluation and display
-          train_labels = untokenize_batch(dataset, train_labels)
-          train_output = untokenize_batch(dataset, train_output)
           valid_inputs = untokenize_batch(dataset, valid_inputs)
           valid_labels = untokenize_batch(dataset, valid_labels)
           valid_output = untokenize_batch(dataset, valid_output)
           infer_output = untokenize_batch(dataset, infer_output)
           
-          # Run training, validation and inference Levenshtein distances
-          train_lev = levenshtein(train_output, train_labels)
-          valid_lev = levenshtein(valid_output, valid_labels)
-          infer_lev = levenshtein(infer_output, valid_labels)
+          # Run evaluation metrics
+          lev = levenshtein(infer_output, valid_labels)
+          lev_density = levenshtein(infer_output, valid_labels, normalize=True)
           
-          train_lev_summ = sess.run(
-            m.lev_summary, feed_dict={m.lev: train_lev})
-          valid_lev_summ = sess.run(
-            m.lev_summary, feed_dict={m.lev: valid_lev})
-          infer_lev_summ = sess.run(
-            m.infer_lev_summary, feed_dict={m.infer_lev: infer_lev})
+          lev_summ = sess.run(
+            m.lev_summary, feed_dict={m.lev: lev})
+          lev_density_summ = sess.run(
+            m.lev_density_summary, feed_dict={m.lev_density: lev_density})
           
           # Write summaries to TensorBoard
           m.train_writer.add_summary(train_ppx_summ, global_step=step)
-          m.train_writer.add_summary(train_lev_summ, global_step=step)
           m.valid_writer.add_summary(valid_ppx_summ, global_step=step)
-          m.valid_writer.add_summary(valid_lev_summ, global_step=step)
-          m.valid_writer.add_summary(infer_lev_summ, global_step=step)
+          m.valid_writer.add_summary(lev_summ, global_step=step)
+          m.valid_writer.add_summary(lev_density_summ, global_step=step)
           
           # Display results to stdout
           print("  lr:", lr)
           print("  p_sample:", p_sample)
           print("  train_ppx:", train_ppx)
-          print("  train_lev:", train_lev)
           print("  valid_ppx:", valid_ppx)
-          print("  valid_lev:", valid_lev)
-          print("  infer_lev:", infer_lev)
+          print("  lev:", lev)
+          print("  lev_density:", lev_density)
           print("Input:")
           print(valid_inputs[0])
           print("Target:")
           print(valid_labels[0])
           print("Output with ground truth:")
           print(valid_output[0])
-          print("Decoded output:")
+          print("Greedily decoded output:")
           print(infer_output[0])
         
         if step % FLAGS.num_steps_per_save == 0:

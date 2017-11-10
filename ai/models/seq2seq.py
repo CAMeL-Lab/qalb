@@ -91,7 +91,7 @@ class Seq2Seq(BaseModel):
       shape=[self.batch_size, self.max_decoder_length])
     # Placeholders for Levenshtein distance summaries
     self.lev = tf.placeholder(tf.float32, name='lev', shape=[])
-    self.infer_lev = tf.placeholder(tf.float32, name='infer_lev', shape=[])
+    self.lev_density = tf.placeholder(tf.float32, name='lev_density', shape=[])
     
     # Sequence lengths - used throughout model
     with tf.name_scope('input_lengths'):
@@ -126,7 +126,7 @@ class Seq2Seq(BaseModel):
     self.perplexity = tf.exp(loss, name='perplexity')
     self.perplexity_summary = tf.summary.scalar('perplexity', self.perplexity)
     self.lev_summary = tf.summary.scalar('lev', self.lev)
-    self.infer_lev_summary = tf.summary.scalar('infer_lev', self.infer_lev)
+    self.lev_density_summary = tf.summary.scalar('lev_density', self.lev_density)
     
     # Index outputs (greedy)
     self.output = tf.argmax(

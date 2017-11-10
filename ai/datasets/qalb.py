@@ -81,7 +81,6 @@ class QALB(BaseDataset):
     with io.open(valid_input_path, encoding='utf-8') as valid_file:
       self.valid_pairs = self.make_pairs(valid_file.readlines(), valid_labels)
   
-  # Override to set the default joining string to not be a whitespace.
   def untokenize(self, tokens, join_str=''):
     result = super().untokenize(tokens, join_str=join_str)
     if not self.parse_repeated:
