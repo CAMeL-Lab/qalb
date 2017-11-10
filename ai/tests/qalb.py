@@ -48,7 +48,7 @@ tf.app.flags.DEFINE_integer('num_steps_per_save', 100, "Number of steps"
                             " before saving the trainable variables.")
 tf.app.flags.DEFINE_integer('max_epochs', 16, "Number of epochs to run"
                             " (0 = no limit).")
-tf.app.flags.DEFINE_string('extension', '', "Extensions of data files.")
+tf.app.flags.DEFINE_string('extension', 'orig', "Extensions of data files.")
 tf.app.flags.DEFINE_string('decode', None, "Set to a path to run on a file.")
 tf.app.flags.DEFINE_string('output_path', os.path.join('output', 'result.txt'),
                            "Name of the output file with decoding results.")
