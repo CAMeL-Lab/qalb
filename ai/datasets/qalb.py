@@ -47,7 +47,7 @@ class QALB(BaseDataset):
   """QALB dataset parsing."""
   
   def __init__(self, file_root, max_input_length=None, max_label_length=None,
-               parse_repeated=False, extension='', **kw):
+               parse_repeated=False, extension='orig', **kw):
     """Arguments:
        `file_root`: the root name of the files in the data/qalb directory.
         The constructor searches for .*.orig, .*.m2, where * is train and dev.
@@ -55,7 +55,7 @@ class QALB(BaseDataset):
        `max_input_length`: maximum sequence length for the inputs,
        `max_label_length`: maximum sequence length for the labels,
        `parse_repeated`: e.g. convert `abababab` to `<ab>4`,
-       `extension`: name of the data file extensions,
+       `extension`: name of the non-label file extensions (without the dot),
        Note on usage: to account for the _GO and _EOS tokens that the labels
        have inserted, if the maximum length sequences are in the labels, use
        two extra time steps if the goal is to not truncate anything."""
@@ -68,14 +68,14 @@ class QALB(BaseDataset):
     data_dir = os.path.join('ai', 'datasets', 'data', 'qalb')
     # Prepare training data
     train_input_path = os.path.join(
-      data_dir, self.file_root + '.train.orig' + self.extension)
+      data_dir, self.file_root + '.train.' + self.extension)
     train_labels = self.maybe_flatten_gold(
       os.path.join(data_dir, self.file_root + '.train'))
     with io.open(train_input_path, encoding='utf-8') as train_file:
       self.train_pairs = self.make_pairs(train_file.readlines(), train_labels)
     # Prepare validation data
     valid_input_path = os.path.join(
-      data_dir, self.file_root + '.dev.orig' + self.extension)
+      data_dir, self.file_root + '.dev.' + self.extension)
     valid_labels = self.maybe_flatten_gold(
       os.path.join(data_dir, self.file_root + '.dev'))
     with io.open(valid_input_path, encoding='utf-8') as valid_file:
@@ -95,12 +95,12 @@ class QALB(BaseDataset):
        seq2seq training, and code cannot be borrowed from the evaluation script
        because it never flattens the system output; instead, it finds the
        minimum number of corrections that map the input into the output."""
-    gold_path = file_root + '.gold' + self.extension
+    gold_path = file_root + '.gold'
     if not force and os.path.exists(gold_path):
       with io.open(gold_path, encoding='utf-8') as gold_file:
         return gold_file.readlines()
     print("Flattening labels...")
-    m2_path = file_root + '.m2' + self.extension
+    m2_path = file_root + '.m2'
     with io.open(m2_path, encoding='utf-8') as m2_file:
       raw_m2_data = m2_file.read().split('\n\n')[:-1]  # remove last empty str
     result = []
