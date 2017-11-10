@@ -217,13 +217,21 @@ class Seq2Seq(BaseModel):
         encoder_cells, encoder_output, dtype=tf.float32,
         sequence_length=self.input_lengths)
     
+    # We only use beam size > 1 during decoding
+    if self.beam_size > 1:
+      return tf.contrib.seq2seq.tile_batch(encoder_output, self.beam_size)
     return encoder_output
   
   
   def build_decoder(self, encoder_output):
     """Build the decoder RNN stack and the final prediction layer."""
     
+    beam_batch_size = self.batch_size
     final_encoder_lengths = self.input_lengths
+    if self.beam_size > 1:
+      beam_batch_size *= self.beam_size
+      final_encoder_lengths = tf.contrib.seq2seq.tile_batch(
+        final_encoder_lengths, self.beam_size)
     
     # The first RNN is wrapped with the attention mechanism
     attention_mechanism = None
@@ -247,8 +255,8 @@ class Seq2Seq(BaseModel):
     if self.attention:
       initial_state = tf.contrib.seq2seq.AttentionWrapperState(
         cell_state=initial_state_pass[0],
-        attention=tf.zeros([self.batch_size, self.hidden_size]),
-        alignments=tf.zeros([self.batch_size, self.max_decoder_length]),
+        attention=tf.zeros([beam_batch_size, self.hidden_size]),
+        alignments=tf.zeros([beam_batch_size, self.max_decoder_length]),
         time=tf.zeros(()), alignment_history=())
     else:
       initial_state = initial_state_pass[0]
@@ -260,34 +268,32 @@ class Seq2Seq(BaseModel):
         [self.rnn_cell() for _ in range(self.rnn_layers - 1)] + [decoder_cell])
       initial_state = tuple(list(initial_state_pass[:-1]) + [initial_state])
     
+    dense = Dense(self.num_types, name='dense')
+    
+    # Beam search decoding during inference (greedy for training evals)
+    generative_decoder = tf.contrib.seq2seq.BeamSearchDecoder(
+      decoder_cell, self.get_embeddings,
+      tf.tile([self.go_id], [self.batch_size]), self.eos_id, initial_state,
+      self.beam_size, output_layer=dense)
+    generative_output = tf.contrib.seq2seq.dynamic_decode(
+      generative_decoder, maximum_iterations=self.max_decoder_length)
+    
     # Training decoder with optional scheduled sampling. If sampling occurs,
     # the output will be fed through the final prediction layer and then fed
     # back to the embedding layer for consistency.
-    # TODO: allow option to choose between embedding and output helpers
-    decoder_input = self.get_embeddings(tf.concat(
-      [tf.tile([[self.go_id]], [self.batch_size, 1]), self.labels], 1))
-    sampling_helper = tf.contrib.seq2seq.ScheduledEmbeddingTrainingHelper(
-      decoder_input, tf.tile([self.max_decoder_length], [self.batch_size]),
-      self.get_embeddings, self.p_sample)
-    dense = Dense(self.num_types, name='dense')
-    decoder = tf.contrib.seq2seq.BasicDecoder(
-      decoder_cell, sampling_helper, initial_state, output_layer=dense)
-    decoder_output = tf.contrib.seq2seq.dynamic_decode(decoder)
-    logits = decoder_output[0].rnn_output
+    if self.beam_size == 1:
+      tf.get_variable_scope().reuse_variables()
+      decoder_input = self.get_embeddings(tf.concat(
+        [tf.tile([[self.go_id]], [self.batch_size, 1]), self.labels], 1))
+      sampling_helper = tf.contrib.seq2seq.ScheduledEmbeddingTrainingHelper(
+        decoder_input, tf.tile([self.max_decoder_length], [self.batch_size]),
+        self.get_embeddings, self.p_sample)
+      decoder = tf.contrib.seq2seq.BasicDecoder(
+        decoder_cell, sampling_helper, initial_state, output_layer=dense)
+      decoder_output = tf.contrib.seq2seq.dynamic_decode(decoder)
+      logits = decoder_output[0].rnn_output
+    else:
+      # To successfully build the graph just fill the logits with garbage 
+      logits = generative_output[0].beam_search_decoder_output.scores
     
-    # TODO: make beam search work
-    # generative_decoder = tf.contrib.seq2seq.BeamSearchDecoder(
-    #   decoder_cell, self.get_embeddings,
-    #   tf.tile([self.go_id], [self.batch_size]), self.eos_id,
-    #   initial_state, self.beam_size, output_layer=dense)
-    ### TEMPORARY
-    ghelper = tf.contrib.seq2seq.GreedyEmbeddingHelper(
-      self.get_embeddings, tf.tile([self.go_id], [self.batch_size]),
-      self.eos_id)
-    generative_decoder = tf.contrib.seq2seq.BasicDecoder(
-      decoder_cell, ghelper, initial_state, output_layer=dense)
-    ### END TEMPORARY
-    tf.get_variable_scope().reuse_variables()
-    generative_output = tf.contrib.seq2seq.dynamic_decode(
-      generative_decoder, maximum_iterations=self.max_decoder_length)
-    return logits, generative_output[0].sample_id
+    return logits, generative_output[0].predicted_ids
