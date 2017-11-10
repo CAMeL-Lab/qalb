@@ -32,7 +32,7 @@ tf.app.flags.DEFINE_float('dropout', .6, "Keep probability for dropout on the"
                           "RNNs' non-recurrent connections.")
 tf.app.flags.DEFINE_float('max_grad_norm', 5., "Clip gradients to this norm.")
 tf.app.flags.DEFINE_float('epsilon', 1e-8, "Denominator constant for Adam.")
-tf.app.flags.DEFINE_integer('beam_size', 3, "Beam search size.")
+tf.app.flags.DEFINE_integer('beam_size', 8, "Beam search size.")
 tf.app.flags.DEFINE_float('p_sample', .3, 'Initial sampling probability.')
 tf.app.flags.DEFINE_integer('switch_to_sgd', None, "Set to a number of epochs"
                             " to pass for the optimizer to switch to SGD.")
@@ -87,6 +87,8 @@ def train():
   print("Building computational graph...")
   graph = tf.Graph()
   with graph.as_default():
+    # During training we use beam width 1. There are lots of complications on
+    # the implementation, e.g. only tiling during inference. + this is faster.
     # pylint: disable=invalid-name
     m = Seq2Seq(
       num_types=dataset.num_types(),
@@ -102,8 +104,7 @@ def train():
       use_lstm=FLAGS.use_lstm, use_residual=FLAGS.use_residual,
       attention=FLAGS.attention, dropout=FLAGS.dropout,
       max_grad_norm=FLAGS.max_grad_norm, epsilon=FLAGS.epsilon, 
-      beam_size=FLAGS.beam_size, restore=FLAGS.restore,
-      model_name=FLAGS.model_name)
+      beam_size=1, restore=FLAGS.restore, model_name=FLAGS.model_name)
   
   with tf.Session(graph=graph) as sess:
     print("Initializing or restoring model...")
@@ -167,7 +168,7 @@ def train():
           valid_inputs = untokenize_batch(dataset, valid_inputs)
           valid_labels = untokenize_batch(dataset, valid_labels)
           valid_output = untokenize_batch(dataset, valid_output)
-          infer_output = untokenize_batch(dataset, infer_output)
+          infer_output = untokenize_batch(dataset, infer_output[:,:,0])
           
           # Run evaluation metrics
           lev = levenshtein(infer_output, valid_labels)
@@ -255,9 +256,13 @@ def decode():
         ids = dataset.tokenize(line)
         while len(ids) < max_length:
           ids.append(dataset.type_to_ix['_PAD'])
-        output = sess.run(m.generative_output, feed_dict={m.inputs: [ids]})
-        output = untokenize_batch(dataset, output)[0] + '\n'
-        output_file.write(output)
+        outputs = sess.run(m.generative_output, feed_dict={m.inputs: [ids]})
+        top_lines = []
+        print("---")
+        for i in range(m.beam_size):
+          top_lines.append(untokenize_batch(dataset, outputs[:,:,i])[0])
+          print(top_lines[i])
+        output_file.write(top_lines[0] + '\n')
 
 
 def main(_):

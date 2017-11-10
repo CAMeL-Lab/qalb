@@ -18,8 +18,11 @@ except AssertionError:
   print("Gold length:", len(gold_lines))
   exit()
 
+levs = []
 lev_densities = []
 for proposed, gold in zip(proposed_lines, gold_lines):
+  levs.append(editdistance.eval(proposed, gold))
   lev_densities.append(editdistance.eval(proposed, gold) / len(gold))
 
-print(sum(lev_densities) / len(lev_densities))
+print("Levenshtein:", sum(levs) / len(levs))
+print("Levenshtein density:", sum(lev_densities) / len(lev_densities))
