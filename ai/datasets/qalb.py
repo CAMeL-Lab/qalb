@@ -144,12 +144,12 @@ class QALB(BaseDataset):
     return zip(*self.pad_batch(batch))
   
   def shorten_repetitions(self, line):
-    """If a pattern is seen at least 4 times contiguously, replace it with
+    """If a pattern is seen at least 2 times contiguously, replace it with
        "pat...pat" (n times) -> "<pat>n"."""
     if not self.parse_repeated:
       return line
     repl = lambda m:'<{}>{}'.format(m.group(1), len(m.group()) // len(m.group(1)))
-    return re.sub(r'(.+?)\1{3,}', repl, line)
+    return re.sub(r'(.+?)\1{1,}', repl, line)
   
   def make_pairs(self, input_lines, label_lines):
     pairs = []
