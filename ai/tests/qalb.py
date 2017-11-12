@@ -36,7 +36,7 @@ tf.app.flags.DEFINE_integer('beam_size', 8, "Beam search size.")
 tf.app.flags.DEFINE_float('p_sample', .3, 'Initial sampling probability.')
 tf.app.flags.DEFINE_integer('switch_to_sgd', None, "Set to a number of epochs"
                             " to pass for the optimizer to switch to SGD.")
-tf.app.flags.DEFINE_boolean('parse_repeated', False, "Set to True to compress"
+tf.app.flags.DEFINE_boolean('parse_repeated', True, "Set to True to compress"
                             " contiguous patterns in the data pipeline.")
 
 ### CONFIG
@@ -44,9 +44,7 @@ tf.app.flags.DEFINE_integer('max_sentence_length', 400, "Max. word length of"
                             " training examples (both inputs and labels).")
 tf.app.flags.DEFINE_integer('num_steps_per_eval', 50, "Number of steps to wait"
                             " before running the graph with the dev set.")
-tf.app.flags.DEFINE_integer('num_steps_per_save', 100, "Number of steps"
-                            " before saving the trainable variables.")
-tf.app.flags.DEFINE_integer('max_epochs', 16, "Number of epochs to run"
+tf.app.flags.DEFINE_integer('max_epochs', 20, "Number of epochs to run"
                             " (0 = no limit).")
 tf.app.flags.DEFINE_string('extension', 'orig', "Extensions of data files.")
 tf.app.flags.DEFINE_string('decode', None, "Set to a path to run on a file.")
@@ -200,15 +198,12 @@ def train():
           print(valid_output[0])
           print("Greedily decoded output:")
           print(infer_output[0])
-        
-        if step % FLAGS.num_steps_per_save == 0:
-          print("Saving model...")
-          m.save()
-          print("Model saved. Resuming training...")
-        
-        sys.stdout.flush()
       
-      # Epoch about to be done - reshuffle the data and get new batches
+      # Epoch about to be done - save, reshuffle the data and get new batches
+      print("Saving model...")
+      m.save()
+      print("Model saved. Resuming training...")
+      sys.stdout.flush()
       batches = dataset.get_train_batches(m.batch_size)
       epoch += 1
 
