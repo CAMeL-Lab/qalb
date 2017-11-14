@@ -47,7 +47,7 @@ class QALB(BaseDataset):
   """QALB dataset parsing."""
   
   def __init__(self, file_root, max_input_length=None, max_label_length=None,
-               parse_repeated=False, extension='orig', **kw):
+               parse_repeated=0, extension='orig', **kw):
     """Arguments:
        `file_root`: the root name of the files in the data/qalb directory.
         The constructor searches for .*.orig, .*.m2, where * is train and dev.
@@ -146,10 +146,10 @@ class QALB(BaseDataset):
   def shorten_repetitions(self, line):
     """If a pattern is seen at least 2 times contiguously, replace it with
        "pat...pat" (n times) -> "<pat>n"."""
-    if not self.parse_repeated:
+    if not self.parse_repeated or self.parse_repeated < 2:
       return line
     repl = lambda m:'<{}>{}'.format(m.group(1), len(m.group()) // len(m.group(1)))
-    return re.sub(r'(.+?)\1{1,}', repl, line)
+    return re.sub('(.+?)\1{%d,}' % (self.parse_repeated - 1), repl, line)
   
   def make_pairs(self, input_lines, label_lines):
     pairs = []
