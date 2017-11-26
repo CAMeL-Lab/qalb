@@ -21,8 +21,8 @@ class Seq2Seq(BaseModel):
                pad_id=0, eos_id=1, go_id=2,
                batch_size=32, embedding_size=32, hidden_size=256, rnn_layers=2,
                bidirectional_encoder=False, bidirectional_mode='add',
-               use_lstm=False, use_residual=False, attention=None,
-               dropout=1., max_grad_norm=5., epsilon=1e-8, beam_size=1, **kw):
+               use_lstm=False, attention=None, dropout=1., max_grad_norm=5.,
+               epsilon=1e-8, beam_size=1, **kw):
     """Keyword args:
        `num_types`: number of unique types (e.g. vocabulary or alphabet size),
        `max_encoder_length`: max length of the encoder,
@@ -40,12 +40,9 @@ class Seq2Seq(BaseModel):
         'project': use a projection matrix to resize the concatenation of the
                    forward and backward hidden states to `embedding_size`,
         'concat': concatenate the forward and backward inputs and pass that
-                  as the input to the next RNN (note: this will not allow the
-                  use of residual connections),
+                  as the input to the next RNN,
        `use_lstm`: set to False to use a GRU cell (Cho et al.,
         https://arxiv.org/abs/1406.1078),
-       `use_residual`: whether to use residual connections between RNN cells
-        (Wu et al., https://arxiv.org/pdf/1609.08144.pdf),
        `attention`: 'bahdanau', or 'luong' (none by default),
        `dropout`: keep probability for the non-recurrent connections between
         RNN cells. Defaults to 1.0; i.e. no dropout,
@@ -64,7 +61,6 @@ class Seq2Seq(BaseModel):
     self.bidirectional_encoder = bidirectional_encoder
     self.bidirectional_mode = bidirectional_mode
     self.use_lstm = use_lstm
-    self.use_residual = use_residual
     self.attention = attention
     self.dropout = dropout
     self.max_grad_norm = max_grad_norm
@@ -105,14 +101,8 @@ class Seq2Seq(BaseModel):
         'kernel', [self.num_types, self.embedding_size],
         initializer=tf.random_uniform_initializer(minval=-sq3, maxval=sq3))
     
-    # Look up the embeddings for the encoder and decoder inputs and project
-    # (essential for residual connections)
-    encoder_input = tf.layers.dense(
-      self.get_embeddings(self.inputs), self.hidden_size,
-      name='embedding_projection')
-    
     with tf.variable_scope('encoder'):
-      encoder_output = self.build_encoder(encoder_input)
+      encoder_output = self.build_encoder(self.get_embeddings(self.inputs))
     
     with tf.variable_scope('decoder'):
       logits, self.generative_output = self.build_decoder(encoder_output)
@@ -132,20 +122,13 @@ class Seq2Seq(BaseModel):
     self.output = tf.argmax(
       logits, axis=2, name='output', output_type=tf.int32)
     
-    # Adam and gradient descent optimizers with norm clipping. This prevents
-    # exploding gradients and allows a switch from Adam to SGD when the model
-    # is reaching convergence (Wu et al., https://arxiv.org/pdf/1609.08144.pdf)
+    # Adam optimizer with norm clipping to prevent exploding gradients
     with tf.name_scope('train_ops'):
       tvars = tf.trainable_variables()
       grads, _ = tf.clip_by_global_norm(
         tf.gradients(loss, tvars), self.max_grad_norm)
-      # Adam optimizer op (first and second order momenta)
-      adam_optimizer = tf.train.AdamOptimizer(self.lr, epsilon=self.epsilon)
-      self.adam = adam_optimizer.apply_gradients(
-        zip(grads, tvars), global_step=self.global_step)
-      # Simple gradient descent op
-      gradient_descent = tf.train.GradientDescentOptimizer(self.lr)
-      self.sgd = gradient_descent.apply_gradients(
+      optimizer = tf.train.AdamOptimizer(self.lr, epsilon=self.epsilon)
+      self.train_step = optimizer.apply_gradients(
         zip(grads, tvars), global_step=self.global_step)
   
   
@@ -173,10 +156,6 @@ class Seq2Seq(BaseModel):
     # Check whether to add an attention mechanism
     if attention_mechanism is not None:
       cell = tf.contrib.seq2seq.AttentionWrapper(cell, attention_mechanism)
-    
-    # Check whether to add residual connections
-    if self.use_residual:
-      cell = tf.contrib.rnn.ResidualWrapper(cell)
     
     # Note: dropout should always be the last wrapper
     if self.dropout < 1:

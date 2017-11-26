@@ -24,18 +24,14 @@ tf.app.flags.DEFINE_boolean('bidirectional_encoder', True, "Whether to use a"
 tf.app.flags.DEFINE_string('bidirectional_mode', 'add', "Set to 'add',"
                            " 'concat' or 'project'.")
 tf.app.flags.DEFINE_boolean('use_lstm', False, "Set to False to use GRUs.")
-tf.app.flags.DEFINE_boolean('use_residual', False, "Set to True to add the RNN"
-                            " inputs to the outputs.")
 tf.app.flags.DEFINE_string('attention', 'luong', "'bahdanau' or 'luong'"
                            " (default is 'luong').")
 tf.app.flags.DEFINE_float('dropout', .6, "Keep probability for dropout on the"
                           "RNNs' non-recurrent connections.")
 tf.app.flags.DEFINE_float('max_grad_norm', 5., "Clip gradients to this norm.")
-tf.app.flags.DEFINE_float('epsilon', 1e-8, "Denominator constant for Adam.")
 tf.app.flags.DEFINE_integer('beam_size', 8, "Beam search size.")
-tf.app.flags.DEFINE_float('p_sample', .3, 'Initial sampling probability.')
-tf.app.flags.DEFINE_integer('switch_to_sgd', None, "Set to a number of epochs"
-                            " to pass for the optimizer to switch to SGD.")
+tf.app.flags.DEFINE_float('initial_p_sample', .3, "Initial decoder sampling"
+                          " probability (0=ground truth, 1=use predictions).")
 tf.app.flags.DEFINE_boolean('parse_repeated', True, "Set to True to compress"
                             " contiguous patterns in the data pipeline.")
 
@@ -99,9 +95,8 @@ def train():
       hidden_size=FLAGS.hidden_size, rnn_layers=FLAGS.rnn_layers,
       bidirectional_encoder=FLAGS.bidirectional_encoder,
       bidirectional_mode=FLAGS.bidirectional_mode,
-      use_lstm=FLAGS.use_lstm, use_residual=FLAGS.use_residual,
-      attention=FLAGS.attention, dropout=FLAGS.dropout,
-      max_grad_norm=FLAGS.max_grad_norm, epsilon=FLAGS.epsilon, 
+      use_lstm=FLAGS.use_lstm, attention=FLAGS.attention,
+      dropout=FLAGS.dropout, max_grad_norm=FLAGS.max_grad_norm,
       beam_size=1, restore=FLAGS.restore, model_name=FLAGS.model_name)
   
   with tf.Session(graph=graph) as sess:
@@ -113,7 +108,7 @@ def train():
     if sess.run(m.lr) == 0:
       sess.run(tf.assign(m.lr, FLAGS.lr))
     if sess.run(m.p_sample) == 0:
-      sess.run(tf.assign(m.p_sample, FLAGS.p_sample))
+      sess.run(tf.assign(m.p_sample, FLAGS.initial_p_sample))
     
     # Get the number of epochs that have passed (easier by getting batches now)
     step = m.global_step.eval()
@@ -133,10 +128,7 @@ def train():
         
         # Wrap into function to measure running time
         def train_step():
-          if FLAGS.switch_to_sgd and epoch >= FLAGS.switch_to_sgd:
-            sess.run(m.sgd, feed_dict=train_fd)
-          else:
-            sess.run(m.adam, feed_dict=train_fd)
+          sess.run(m.train_step, feed_dict=train_fd)
         
         print("Global step {0} ({1}s)".format(
           step, timeit.timeit(train_step, number=1)))
@@ -238,9 +230,8 @@ def decode():
       hidden_size=FLAGS.hidden_size, rnn_layers=FLAGS.rnn_layers,
       bidirectional_encoder=FLAGS.bidirectional_encoder,
       bidirectional_mode=FLAGS.bidirectional_mode,
-      use_lstm=FLAGS.use_lstm, use_residual=FLAGS.use_residual,
-      attention=FLAGS.attention, beam_size=FLAGS.beam_size,
-      restore=True, model_name=FLAGS.model_name)
+      use_lstm=FLAGS.use_lstm, attention=FLAGS.attention,
+      beam_size=FLAGS.beam_size, restore=True, model_name=FLAGS.model_name)
   
   with tf.Session(graph=graph) as sess:
     print("Restoring model...")
