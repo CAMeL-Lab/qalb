@@ -32,7 +32,7 @@ tf.app.flags.DEFINE_float('max_grad_norm', 5., "Clip gradients to this norm.")
 tf.app.flags.DEFINE_integer('beam_size', 8, "Beam search size.")
 tf.app.flags.DEFINE_float('initial_p_sample', .3, "Initial decoder sampling"
                           " probability (0=ground truth, 1=use predictions).")
-tf.app.flags.DEFINE_boolean('parse_repeated', True, "Set to True to compress"
+tf.app.flags.DEFINE_integer('parse_repeated', 0, "Set to > 1 to compress"
                             " contiguous patterns in the data pipeline.")
 
 ### CONFIG
