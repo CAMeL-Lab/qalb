@@ -32,6 +32,8 @@ tf.app.flags.DEFINE_float('max_grad_norm', 5., "Clip gradients to this norm.")
 tf.app.flags.DEFINE_integer('beam_size', 8, "Beam search size.")
 tf.app.flags.DEFINE_float('initial_p_sample', .3, "Initial decoder sampling"
                           " probability (0=ground truth, 1=use predictions).")
+tf.app.flags.DEFINE_float('p_sample_decay', 500., "Width of inverse sigmoid"
+                          "decay for scheduled sampling (0=no decay).")
 tf.app.flags.DEFINE_integer('parse_repeated', 0, "Set to > 1 to compress"
                             " contiguous patterns in the data pipeline.")
 
@@ -103,8 +105,7 @@ def train():
     print("Initializing or restoring model...")
     m.start()
     
-    # If the model was not restored, set variable hyperparameters to their
-    # provided initial values
+    # If the model was not restored, initialize the variable hyperparameters.
     if sess.run(m.lr) == 0:
       sess.run(tf.assign(m.lr, FLAGS.lr))
     if sess.run(m.p_sample) == 0:
@@ -121,8 +122,14 @@ def train():
       while step < (epoch + 1) * len(batches):
         step = m.global_step.eval()
         
+        # Scheduled sampling decay
+        if FLAGS.p_sample_decay:
+          k = FLAGS.p_sample_decay
+          sampling_prob = max(
+            1. - k / (k + np.exp(step / k)), FLAGS.initial_p_sample)
+          sess.run(tf.assign(m.p_sample, sampling_prob))
+        
         # Gradient descent and backprop
-        # TODO: add lr decays
         train_inputs, train_labels = zip(*batches[step % len(batches)])
         train_fd = {m.inputs: train_inputs, m.labels: train_labels}
         
