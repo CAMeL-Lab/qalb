@@ -48,14 +48,14 @@ def map_inclusion(A, B):
   return map(_map, A)
 
 
-def beautify_output(m2_output, is_first):
+def beautify_output(m2_output, seq_number):
   """Beautify m2 file output for a single example."""
   
   # Remove the first 16 characters of each line-- they are just descriptions
   lines = list(map(lambda l: l[16:], m2_output.split('\n')))
   
   # Every unit except the first has three extra lines in the beginning
-  if not is_first:
+  if seq_number > 0:
     lines = lines[3:]
   
   print("Input:")
@@ -69,17 +69,20 @@ def beautify_output(m2_output, is_first):
   
   print("Gold:")
   print(gold_line)
-  print("Proposed edits:")
   
   num_correct_edits = 0
+  edit_str = str(seq_number) + ' {}\t{}\t{}-{}\t{}\t{}'
+  
   for edit, status in map_inclusion(proposed_edits, gold_edits):
     if status == "MATCH":
       num_correct_edits += 1
-    print('PRED\t{0}\t{1}\t{2}\t{3}\t{4}'.format(status, *edit))
+    print(edit_str.format("PRED", status, *edit))
   
-  print("\nGold edits:")
+  print('')
   for edit, status in map_inclusion(gold_edits, proposed_edits):
-    print('GOLD\t{0}\t{1}\t{2}\t{3}\t{4}'.format(status, *edit))
+    print(edit_str.format("GOLD", status, *edit))
+  
+  eval_str = str(seq_number) + ' {}\t{:10.4f}'
   
   lev = editdistance.eval(lines[2], gold_line)
   lev_density = lev / len(gold_line)
@@ -87,11 +90,12 @@ def beautify_output(m2_output, is_first):
   recall = num_correct_edits / len(gold_edits)
   f1 = 2 * precision * recall / (precision + recall)
   
-  print("\nLevenshtein distance:", lev)
-  print(" Levenshtein density:", lev_density)
-  print("           Precision:", precision)
-  print("              Recall:", recall)
-  print("            F1 score:", f1)
+  print('')
+  print(eval_str.format('LDIS', lev))
+  print(eval_str.format('LDEN', lev_density))
+  print(eval_str.format('P', precision))
+  print(eval_str.format('R', recall))
+  print(eval_str.format('F1', f1))
   print("-" * 80)
   
   return lev, lev_density, precision, recall, f1
@@ -107,9 +111,8 @@ with io.open(m2_path, encoding='utf-8') as f:
   # this way would be the final scores.
   units = f.read().split('-'  * 43)
   lev, lev_density, precision, recall, f1 = [0] * 5
-  for unit in units[:-1]:
-    _lev, _lev_density, _precision, _recall, _f1 = beautify_output(
-      unit, unit == units[0])
+  for i, unit in enumerate(units[:-1]):
+    _lev, _lev_density, _precision, _recall, _f1 = beautify_output(unit, i)
     lev += _lev
     lev_density += _lev_density
     precision += _precision
@@ -117,8 +120,9 @@ with io.open(m2_path, encoding='utf-8') as f:
     f1 += _f1
   
   n = len(units) - 1
-  print("Levenshtein distance:", lev / n)
-  print(" Levenshtein density:", lev_density / n)
-  print("           Precision:", precision / n)
-  print("              Recall:", recall / n)
-  print("            F1 score:", f1 / n)
+  eval_str = '{}\t{:10.4f}'
+  print(eval_str.format('LDIS', lev / n))
+  print(eval_str.format('LDEN', lev_density / n))
+  print(eval_str.format('P', precision / n))
+  print(eval_str.format('R', recall / n))
+  print(eval_str.format('F1', f1 / n))
