@@ -15,7 +15,7 @@ from ai.models import Seq2Seq
 
 ### HYPERPARAMETERS
 tf.app.flags.DEFINE_float('lr', 5e-4, "Initial learning rate.")
-tf.app.flags.DEFINE_integer('batch_size', 64, "Batch size.")
+tf.app.flags.DEFINE_integer('batch_size', 128, "Batch size.")
 tf.app.flags.DEFINE_integer('embedding_size', 128, "Embedding dimensionality.")
 tf.app.flags.DEFINE_integer('hidden_size', 256, "Number of hidden units.")
 tf.app.flags.DEFINE_integer('rnn_layers', 2, "Number of RNN layers.")
@@ -28,12 +28,14 @@ tf.app.flags.DEFINE_string('attention', 'luong', "'bahdanau' or 'luong'"
                            " (default is 'luong').")
 tf.app.flags.DEFINE_float('dropout', .6, "Keep probability for dropout on the"
                           "RNNs' non-recurrent connections.")
-tf.app.flags.DEFINE_float('max_grad_norm', 5., "Clip gradients to this norm.")
+tf.app.flags.DEFINE_float('max_grad_norm', 10., "Clip gradients to this norm.")
 tf.app.flags.DEFINE_integer('beam_size', 8, "Beam search size.")
 tf.app.flags.DEFINE_float('initial_p_sample', .3, "Initial decoder sampling"
                           " probability (0=ground truth, 1=use predictions).")
 tf.app.flags.DEFINE_float('p_sample_decay', 0, "Width of inverse sigmoid"
                           "decay for scheduled sampling (0=no decay).")
+tf.app.flags.DEFINE_boolean('soft_p_sample', True, "Squeeze inverse sigmoid"
+                            "decay by initial_p_sample.")
 tf.app.flags.DEFINE_integer('parse_repeated', 3, "Set to > 1 to compress"
                             " contiguous patterns in the data pipeline.")
 
@@ -125,8 +127,9 @@ def train():
         # Scheduled sampling decay
         if FLAGS.p_sample_decay:
           k = FLAGS.p_sample_decay
+          soft = 1 - int(FLAGS.soft_p_sample) * (1 - FLAGS.initial_p_sample)
           sampling_prob = max(
-            1. - k / (k + np.exp(step / k)), FLAGS.initial_p_sample)
+            1. - soft * k / (k + np.exp(step / k)), FLAGS.initial_p_sample)
           sess.run(tf.assign(m.p_sample, sampling_prob))
         
         # Gradient descent and backprop
