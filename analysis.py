@@ -52,7 +52,7 @@ def f1_score(precision, recall):
   """Computes an F1 score."""
   if precision + recall == 0:
     return 0
-  return 2 * pecision * recall / (precision + recall)
+  return 2 * precision * recall / (precision + recall)
 
 
 def beautify_output(m2_output, seq_number):
