@@ -11,20 +11,24 @@ from ai.datasets.qalb import apply_corrections
 def parse_edits(line):
   """Given a line of edits from the m2 file, extract its contents."""
   
-  # Get edits inside brackets
-  edit_strings = re.findall(r'\(([^\)]*)\)', line)
+  # Get edits inside brackets allowing parentheses
+  edit_strings = re.findall(r'\((.*?)\)[,\]]', line)
   
   edits = []
   for edit_string in edit_strings:
-    edit_items =  edit_string.split(', ')
+    # Splitting by comma is not enough. Some of the edits actually fix spacing
+    # when commas are used, so we may can't use edit_string.split(', ')
+    # For some reason, the unicode gold strings are enclosed in a list
+    m = re.match(r'^(\d+), (\d+), (.*), \[?(.*)\]?$', edit_string)
+    edit_items = [m.group(i) for i in range(1, 5)]
+    
+    # No way to handle this in regex
+    if edit_items[3].endswith(']'):
+      edit_items[3] = edit_items[3][:-1]
     
     # Cast the indices
     edit_items[0] = int(edit_items[0])
     edit_items[1] = int(edit_items[1])
-    
-    # For some reason, the unicode gold strings are enclosed in a list
-    if edit_items[3].startswith('['):
-      edit_items[3] = edit_items[3][1:-1]
     
     # Convert unicode-string-inside-string into actual unicode string
     edit_items[2] = codecs.decode(edit_items[2][2:-1], 'unicode_escape')
@@ -58,21 +62,31 @@ def f1_score(precision, recall):
 def beautify_output(m2_output, seq_number):
   """Beautify m2 file output for a single example."""
   
-  # Remove the first 16 characters of each line-- they are just descriptions
-  lines = list(map(lambda l: l[16:], m2_output.split('\n')))
-  
   # Every unit except the first has three extra lines in the beginning
+  lines = m2_output.split('\n')[1:]
   if seq_number > 0:
     lines = lines[3:]
   
-  print("Input:")
-  print(lines[1], "\n")
-  print("System output:")
-  print(lines[2], "\n")
+  # Check for ocassional extra lines
+  while lines[0][0] in ['&', '!', '*']:
+    lines = lines[1:]
   
-  proposed_edits = parse_edits(lines[3])
-  gold_edits = parse_edits(lines[4])
-  gold_line = apply_corrections(lines[1], gold_edits)
+  # Remove the first 16 characters of each line-- they are just descriptions
+  lines = list(map(lambda l: l[16:], lines))
+  
+  print("Input:")
+  print(lines[0], "\n")
+  print("System output:")
+  print(lines[1], "\n")
+  
+  proposed_edits = parse_edits(lines[2])
+  gold_edits = parse_edits(lines[3])
+  try:
+    gold_line = apply_corrections(lines[0], gold_edits)
+  except:
+    for g in gold_edits:
+      print(g)
+    raise
   
   print("Gold:")
   print(gold_line)
@@ -91,10 +105,25 @@ def beautify_output(m2_output, seq_number):
   
   eval_str = str(seq_number) + ' {}\t{:10.4f}'
   
-  lev = editdistance.eval(lines[2], gold_line)
+  lev = editdistance.eval(lines[1], gold_line)
   lev_density = lev / len(gold_line)
-  precision = num_correct_edits / len(proposed_edits)
-  recall = num_correct_edits / len(gold_edits)
+  
+  if len(proposed_edits):
+    precision = num_correct_edits / len(proposed_edits)
+  else:
+    if len(gold_edits):
+      precision = 0
+    else:
+      precision = 1
+  
+  if len(gold_edits):
+    recall = num_correct_edits / len(gold_edits)
+  else:
+    if len(proposed_edits):
+      recall = 0
+    else:
+      recall = 1
+  
   f1 = f1_score(precision, recall)
   
   print('')
