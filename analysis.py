@@ -48,6 +48,13 @@ def map_inclusion(A, B):
   return map(_map, A)
 
 
+def f1_score(precision, recall):
+  """Computes an F1 score."""
+  if precision + recall == 0:
+    return 0
+  return 2 * pecision * recall / (precision + recall)
+
+
 def beautify_output(m2_output, seq_number):
   """Beautify m2 file output for a single example."""
   
@@ -88,7 +95,7 @@ def beautify_output(m2_output, seq_number):
   lev_density = lev / len(gold_line)
   precision = num_correct_edits / len(proposed_edits)
   recall = num_correct_edits / len(gold_edits)
-  f1 = 2 * precision * recall / (precision + recall)
+  f1 = f1_score(precision, recall)
   
   print('')
   print(eval_str.format('LDIS', lev))
