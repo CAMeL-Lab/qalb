@@ -33,7 +33,19 @@ def parse_edits(line):
     edits.append(edit_items)
     
   return edits
+
+
+def map_inclusion(A, B):
+  """Map a -> (a, a in B)."""
   
+  def _map(a):
+    if a in B:
+      status = "MATCH"
+    else:
+      status = "MISS"
+    return (a, status)
+  
+  return map(_map, A)
 
 
 def beautify_output(m2_output, is_first):
@@ -57,25 +69,17 @@ def beautify_output(m2_output, is_first):
   
   print("Gold:")
   print(gold_line)
-  
-  # Check for correct edits
-  num_correct_edits = 0
-  proposed_edits = list(map(
-    lambda edit: (edit, edit in gold_edits),
-    proposed_edits))
-  
   print("Proposed edits:")
-  for edit, is_correct in proposed_edits:
-    if is_correct:
-      mark = u'\u2713'  # checkmark
+  
+  num_correct_edits = 0
+  for edit, status in map_inclusion(proposed_edits, gold_edits):
+    if status == "MATCH":
       num_correct_edits += 1
-    else:
-      mark = u'\u2717'  # cross
-    print(mark, edit)
+    print('PRED\t{0}\t{1}\t{2}\t{3}\t{4}'.format(status, *edit))
   
   print("\nGold edits:")
-  for edit in gold_edits:
-    print(edit)
+  for edit, status in map_inclusion(gold_edits, proposed_edits):
+    print('GOLD\t{0}\t{1}\t{2}\t{3}\t{4}'.format(status, *edit))
   
   lev = editdistance.eval(lines[2], gold_line)
   lev_density = lev / len(gold_line)
