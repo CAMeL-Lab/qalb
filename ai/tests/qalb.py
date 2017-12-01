@@ -29,7 +29,7 @@ tf.app.flags.DEFINE_string('attention', 'luong', "'bahdanau' or 'luong'"
 tf.app.flags.DEFINE_float('dropout', .6, "Keep probability for dropout on the"
                           "RNNs' non-recurrent connections.")
 tf.app.flags.DEFINE_float('max_grad_norm', 10., "Clip gradients to this norm.")
-tf.app.flags.DEFINE_integer('beam_size', 8, "Beam search size.")
+tf.app.flags.DEFINE_integer('beam_size', 5, "Beam search size.")
 tf.app.flags.DEFINE_float('initial_p_sample', .3, "Initial decoder sampling"
                           " probability (0=ground truth, 1=use predictions).")
 tf.app.flags.DEFINE_float('p_sample_decay', 0, "Width of inverse sigmoid"
@@ -44,7 +44,7 @@ tf.app.flags.DEFINE_integer('max_sentence_length', 400, "Max. word length of"
                             " training examples (both inputs and labels).")
 tf.app.flags.DEFINE_integer('num_steps_per_eval', 50, "Number of steps to wait"
                             " before running the graph with the dev set.")
-tf.app.flags.DEFINE_integer('max_epochs', 20, "Number of epochs to run"
+tf.app.flags.DEFINE_integer('max_epochs', 25, "Number of epochs to run"
                             " (0 = no limit).")
 tf.app.flags.DEFINE_string('extension', 'orig', "Extensions of data files.")
 tf.app.flags.DEFINE_string('decode', None, "Set to a path to run on a file.")
