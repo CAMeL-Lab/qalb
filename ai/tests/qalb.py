@@ -128,7 +128,7 @@ def train():
           initial = FLAGS.initial_p_sample
           if FLAGS.schedule_type == 'sigmoid':
             # Inverse sigmoid scheduled sampling
-            sampling_prob = max(1. - * k / (k + np.exp(step / k)), initial)
+            sampling_prob = max(1. - k / (k + np.exp(step / k)), initial)
           else:
             # Linear scheduled sampling is set to reach 1 at step k
             sampling_prob = (1. - initial) / k + initial
