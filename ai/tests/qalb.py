@@ -32,10 +32,8 @@ tf.app.flags.DEFINE_float('max_grad_norm', 10., "Clip gradients to this norm.")
 tf.app.flags.DEFINE_integer('beam_size', 5, "Beam search size.")
 tf.app.flags.DEFINE_float('initial_p_sample', .3, "Initial decoder sampling"
                           " probability (0=ground truth, 1=use predictions).")
-tf.app.flags.DEFINE_float('p_sample_decay', 0, "Width of inverse sigmoid"
-                          "decay for scheduled sampling (0=no decay).")
-tf.app.flags.DEFINE_boolean('soft_p_sample', True, "Squeeze inverse sigmoid"
-                            "decay by initial_p_sample.")
+tf.app.flags.DEFINE_string('schedule_type', 'sigmoid', "'linear' or 'sigmoid'")
+tf.app.flags.DEFINE_float('schedule_decay', 0, "Width of p_sample decay.")
 tf.app.flags.DEFINE_integer('parse_repeated', 3, "Set to > 1 to compress"
                             " contiguous patterns in the data pipeline.")
 
@@ -44,9 +42,9 @@ tf.app.flags.DEFINE_integer('max_sentence_length', 400, "Max. word length of"
                             " training examples (both inputs and labels).")
 tf.app.flags.DEFINE_integer('num_steps_per_eval', 50, "Number of steps to wait"
                             " before running the graph with the dev set.")
-tf.app.flags.DEFINE_integer('max_epochs', 25, "Number of epochs to run"
+tf.app.flags.DEFINE_integer('max_epochs', 30, "Number of epochs to run"
                             " (0 = no limit).")
-tf.app.flags.DEFINE_string('extension', 'orig', "Extensions of data files.")
+tf.app.flags.DEFINE_string('extension', 'mada', "Extensions of data files.")
 tf.app.flags.DEFINE_string('decode', None, "Set to a path to run on a file.")
 tf.app.flags.DEFINE_string('output_path', os.path.join('output', 'result.txt'),
                            "Name of the output file with decoding results.")
@@ -125,11 +123,15 @@ def train():
         step = m.global_step.eval()
         
         # Scheduled sampling decay
-        if FLAGS.p_sample_decay:
-          k = FLAGS.p_sample_decay
-          soft = 1 - int(FLAGS.soft_p_sample) * (1 - FLAGS.initial_p_sample)
-          sampling_prob = max(
-            1. - soft * k / (k + np.exp(step / k)), FLAGS.initial_p_sample)
+        if FLAGS.schedule_decay:
+          k = FLAGS.schedule_decay
+          initial = FLAGS.initial_p_sample
+          if FLAGS.schedule_type = 'sigmoid':
+            # Inverse sigmoid scheduled sampling
+            sampling_prob = max(1. - * k / (k + np.exp(step / k)), initial)
+          else:
+            # Linear scheduled sampling is set to reach 1 at step k
+            sampling_prob = (1. - initial) / k + initial
           sess.run(tf.assign(m.p_sample, sampling_prob))
         
         # Gradient descent and backprop
