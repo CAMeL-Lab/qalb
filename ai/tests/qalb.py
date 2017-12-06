@@ -126,7 +126,7 @@ def train():
         if FLAGS.schedule_decay:
           k = FLAGS.schedule_decay
           initial = FLAGS.initial_p_sample
-          if FLAGS.schedule_type = 'sigmoid':
+          if FLAGS.schedule_type == 'sigmoid':
             # Inverse sigmoid scheduled sampling
             sampling_prob = max(1. - * k / (k + np.exp(step / k)), initial)
           else:
