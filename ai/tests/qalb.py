@@ -42,7 +42,7 @@ tf.app.flags.DEFINE_integer('max_sentence_length', 400, "Max. word length of"
                             " training examples (both inputs and labels).")
 tf.app.flags.DEFINE_integer('num_steps_per_eval', 50, "Number of steps to wait"
                             " before running the graph with the dev set.")
-tf.app.flags.DEFINE_integer('max_epochs', 30, "Number of epochs to run"
+tf.app.flags.DEFINE_integer('max_epochs', 50, "Number of epochs to run"
                             " (0 = no limit).")
 tf.app.flags.DEFINE_string('extension', 'mada', "Extensions of data files.")
 tf.app.flags.DEFINE_string('decode', None, "Set to a path to run on a file.")
@@ -131,7 +131,7 @@ def train():
             sampling_prob = max(1. - k / (k + np.exp(step / k)), initial)
           else:
             # Linear scheduled sampling is set to reach 1 at step k
-            sampling_prob = (1. - initial) / k + initial
+            sampling_prob = step * (1. - initial) / k + initial
           sess.run(tf.assign(m.p_sample, sampling_prob))
         
         # Gradient descent and backprop
