@@ -30,10 +30,11 @@ tf.app.flags.DEFINE_float('dropout', .6, "Keep probability for dropout on the"
                           "RNNs' non-recurrent connections.")
 tf.app.flags.DEFINE_float('max_grad_norm', 10., "Clip gradients to this norm.")
 tf.app.flags.DEFINE_integer('beam_size', 5, "Beam search size.")
-tf.app.flags.DEFINE_float('initial_p_sample', .3, "Initial decoder sampling"
+tf.app.flags.DEFINE_float('initial_p_sample', .15, "Initial decoder sampling"
                           " probability (0=ground truth, 1=use predictions).")
-tf.app.flags.DEFINE_string('schedule_type', 'sigmoid', "'linear' or 'sigmoid'")
-tf.app.flags.DEFINE_float('schedule_decay', 0, "Width of p_sample decay.")
+tf.app.flags.DEFINE_float('final_p_sample', .6, "Final decoder sampling"
+                          " probability (0=ground truth, 1=use predictions).")
+tf.app.flags.DEFINE_float('width_p_sample', 0, "Width of p_sample decay.")
 tf.app.flags.DEFINE_integer('parse_repeated', 3, "Set to > 1 to compress"
                             " contiguous patterns in the data pipeline.")
 
@@ -123,16 +124,11 @@ def train():
         step = m.global_step.eval()
         
         # Scheduled sampling decay
-        if FLAGS.schedule_decay:
-          k = FLAGS.schedule_decay
-          initial = FLAGS.initial_p_sample
-          if FLAGS.schedule_type == 'sigmoid':
-            # Inverse sigmoid scheduled sampling
-            sampling_prob = max(1. - k / (k + np.exp(step / k)), initial)
-          else:
-            # Linear scheduled sampling is set to reach 1 at step k
-            sampling_prob = (1. - initial) / k + initial
-          sess.run(tf.assign(m.p_sample, sampling_prob))
+        if FLAGS.width_p_sample:
+          i = FLAGS.initial_p_sample
+          f = FLAGS.final_p_sample
+          p = min(f, i + step * (f - i) / FLAGS.width_p_sample)
+          sess.run(tf.assign(m.p_sample, p))
         
         # Gradient descent and backprop
         train_inputs, train_labels = zip(*batches[step % len(batches)])
