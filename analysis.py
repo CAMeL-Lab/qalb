@@ -1,3 +1,7 @@
+"""Beautifier for m2scorer output. This program takes as input a file whose
+   content is the output of the m2scorer with the -v flag, and outputs readable
+   results that can be easily manipulated with bash commands."""
+
 import codecs
 import io
 import re
@@ -40,7 +44,7 @@ def parse_edits(line):
 
 
 def map_inclusion(A, B):
-  """Map a -> (a, a in B)."""
+  """Map a -> (a, a in B). Very suboptimal but data is small."""
   
   def _map(a):
     if a in B:
