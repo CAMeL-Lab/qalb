@@ -12,6 +12,14 @@ import editdistance
 from ai.datasets.qalb import apply_corrections
 
 
+try:
+  M2_PATH = sys.argv[1]
+
+except IndexError:
+  print("Usage: python analysis.py [m2_output]")
+  exit()
+
+
 def parse_edits(line):
   """Given a line of edits from the m2 file, extract its contents."""
   
@@ -141,12 +149,7 @@ def beautify_output(m2_output, seq_number):
   return lev, lev_density, precision, recall, f1
 
 
-try:
-  m2_path = sys.argv[1]
-except IndexError:
-  print("Usage: python analysis.py [m2_output]")
-
-with io.open(m2_path, encoding='utf-8') as f:
+with io.open(M2_PATH, encoding='utf-8') as f:
   # All the units are separated by 43 dashes. The last element after splitting
   # this way would be the final scores.
   units = f.read().split('-'  * 43)

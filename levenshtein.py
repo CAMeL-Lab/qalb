@@ -1,3 +1,7 @@
+"""Levenshtein distance and density scorer. This program takes as input two
+   files with the same number of lines, and computes the average edit distance
+   and density (edit distance / length of gold line)."""
+
 import io
 import sys
 
