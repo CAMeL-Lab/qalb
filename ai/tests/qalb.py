@@ -30,9 +30,9 @@ tf.app.flags.DEFINE_float('dropout', .6, "Keep probability for dropout on the"
                           "RNNs' non-recurrent connections.")
 tf.app.flags.DEFINE_float('max_grad_norm', 10., "Clip gradients to this norm.")
 tf.app.flags.DEFINE_integer('beam_size', 5, "Beam search size.")
-tf.app.flags.DEFINE_float('initial_p_sample', .15, "Initial decoder sampling"
+tf.app.flags.DEFINE_float('initial_p_sample', .3, "Initial decoder sampling"
                           " probability (0=ground truth, 1=use predictions).")
-tf.app.flags.DEFINE_float('final_p_sample', .6, "Final decoder sampling"
+tf.app.flags.DEFINE_float('final_p_sample', .3, "Final decoder sampling"
                           " probability (0=ground truth, 1=use predictions).")
 tf.app.flags.DEFINE_float('width_p_sample', 0, "Width of p_sample decay.")
 tf.app.flags.DEFINE_integer('parse_repeated', 3, "Set to > 1 to compress"
