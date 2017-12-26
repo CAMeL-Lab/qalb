@@ -106,7 +106,12 @@ def train():
       max_grad_norm=FLAGS.max_grad_norm, gpu_config=FLAGS.gpu_config,
       beam_size=1, restore=FLAGS.restore, model_name=FLAGS.model_name)
   
-  with tf.Session(graph=graph) as sess:
+  # Allow TensorFlow to resort back to CPU when we try to set an operation to
+  # a GPU where there's only a CPU implementation, rather than crashing.
+  sess_config = tf.ConfigProto(
+    allow_soft_placement=True, log_device_placement=True)
+  
+  with tf.Session(graph=graph, config=sess_config) as sess:
     print("Initializing or restoring model...")
     sys.stdout.flush()
     m.start()
