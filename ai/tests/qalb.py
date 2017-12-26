@@ -46,6 +46,9 @@ tf.app.flags.DEFINE_integer('num_steps_per_eval', 50, "Number of steps to wait"
 tf.app.flags.DEFINE_integer('max_epochs', 50, "Number of epochs to run"
                             " (0 = no limit).")
 tf.app.flags.DEFINE_string('extension', 'mada', "Extensions of data files.")
+tf.app.flags.DEFINE_string('gpu_config', 'multi_gpu', "Device placement accepts"
+                           "'multi_gpu' to use multiple GPUs in the graph, or"
+                           "'mutli_worker' to replicate the graph for each GPU")
 tf.app.flags.DEFINE_string('decode', None, "Set to a path to run on a file.")
 tf.app.flags.DEFINE_string('output_path', os.path.join('output', 'result.txt'),
                            "Name of the output file with decoding results.")
@@ -84,6 +87,7 @@ def train():
   print("Building computational graph...")
   graph = tf.Graph()
   with graph.as_default():
+    
     # During training we use beam width 1. There are lots of complications on
     # the implementation, e.g. only tiling during inference. + this is faster.
     # pylint: disable=invalid-name
@@ -98,8 +102,8 @@ def train():
       hidden_size=FLAGS.hidden_size, rnn_layers=FLAGS.rnn_layers,
       bidirectional_encoder=FLAGS.bidirectional_encoder,
       bidirectional_mode=FLAGS.bidirectional_mode,
-      use_lstm=FLAGS.use_lstm, attention=FLAGS.attention,
-      dropout=FLAGS.dropout, max_grad_norm=FLAGS.max_grad_norm,
+      use_lstm=FLAGS.use_lstm, attention=FLAGS.attention, dropout=FLAGS.dropout,
+      max_grad_norm=FLAGS.max_grad_norm, gpu_config=FLAGS.gpu_config,
       beam_size=1, restore=FLAGS.restore, model_name=FLAGS.model_name)
   
   with tf.Session(graph=graph) as sess:
