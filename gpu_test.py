@@ -1,11 +1,26 @@
+"""Batch size runtime testing for GPUs. This script takes a number of steps and
+   a step size, and will output the runtimes for the QALB test. This way one can
+   check for which batch sizes does the running time increase less than in
+   direct proportionality."""
+
 import re
 import shlex
 from subprocess import Popen, PIPE, STDOUT
+import sys
+
+
+try:
+  NUM_STEPS = int(sys.argv[1])
+  STEP_SIZE = int(sys.argv[2])
+
+except IndexError:
+  print("Usage: python gpu_test.py [num_steps] [step_size]")
+  exit()
 
 
 runtimes = []
 
-for i in range(50, 350, 50):
+for i in range(STEP_SIZE, (NUM_STEPS + 1) * STEP_SIZE, STEP_SIZE):
   
   job = 'python3 -m ai.tests.qalb --model_name=gpu_test_{0} --batch_size={0}'
   
@@ -23,7 +38,7 @@ for i in range(50, 350, 50):
     if m:
       step_runtimes.append(float(m.group(1)))
       expected_step += 1
-      if expected_step == 10:
+      if expected_step >= 10:
         p.kill()
         break
   
