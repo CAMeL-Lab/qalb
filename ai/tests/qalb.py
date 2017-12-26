@@ -104,6 +104,7 @@ def train():
   
   with tf.Session(graph=graph) as sess:
     print("Initializing or restoring model...")
+    sys.stdout.flush()
     m.start()
     
     # If the model was not restored, initialize the variable hyperparameters.
@@ -198,12 +199,13 @@ def train():
           print(valid_output[0])
           print("Greedily decoded output:")
           print(infer_output[0])
+        
+        sys.stdout.flush()
       
       # Epoch about to be done - save, reshuffle the data and get new batches
       print("Saving model...")
       m.save()
       print("Model saved. Resuming training...")
-      sys.stdout.flush()
       batches = dataset.get_train_batches(m.batch_size)
       epoch += 1
 
