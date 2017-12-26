@@ -6,7 +6,7 @@ import tensorflow as tf
 # pylint: disable=no-name-in-module
 from tensorflow.python.layers.core import Dense
 
-from ai import get_available_gpus
+from ai.utils import get_available_gpus
 from ai.models import BaseModel
 
 
@@ -198,7 +198,7 @@ class Seq2Seq(BaseModel):
       
       (encoder_fw_out, encoder_bw_out), _ = tf.nn.bidirectional_dynamic_rnn(
         fw_cell, bw_cell, encoder_input, dtype=tf.float32,
-        sequence_length=self.input_lengths)
+        sequence_length=self.input_lengths, swap_memory=bool(self.num_gpus))
       
       # Postprocess the bidirectional output according to the initial config
       if self.bidirectional_mode == 'add':
@@ -217,7 +217,7 @@ class Seq2Seq(BaseModel):
       #   first_cell_gpu = '/gpu:{}'.format(i)
       encoder_output, _ = tf.nn.dynamic_rnn(
         self.rnn_cell(gpu=first_cell_gpu), encoder_input, dtype=tf.float32,
-        sequence_length=self.input_lengths)
+        sequence_length=self.input_lengths, swap_memory=bool(self.num_gpus))
     
     # Only for deep RNN architectures
     if self.rnn_layers > 1:
@@ -233,7 +233,7 @@ class Seq2Seq(BaseModel):
       
       encoder_output, _ = tf.nn.dynamic_rnn(
         tf.contrib.rnn.MultiRNNCell(cells), encoder_output, dtype=tf.float32,
-        sequence_length=self.input_lengths)
+        sequence_length=self.input_lengths, swap_memory=bool(self.num_gpus))
     
     # We only use beam size > 1 during decoding
     if self.beam_size > 1:
@@ -310,7 +310,8 @@ class Seq2Seq(BaseModel):
       tf.tile([self.go_id], [self.batch_size]), self.eos_id, initial_state,
       self.beam_size, output_layer=dense)
     generative_output = tf.contrib.seq2seq.dynamic_decode(
-      generative_decoder, maximum_iterations=self.max_decoder_length)
+      generative_decoder, maximum_iterations=self.max_decoder_length,
+      swap_memory=bool(self.num_gpus))
     
     # Training decoder with optional scheduled sampling. If sampling occurs,
     # the output will be fed through the final prediction layer and then fed
@@ -324,7 +325,8 @@ class Seq2Seq(BaseModel):
         self.get_embeddings, self.p_sample)
       decoder = tf.contrib.seq2seq.BasicDecoder(
         decoder_cell, sampling_helper, initial_state, output_layer=dense)
-      decoder_output = tf.contrib.seq2seq.dynamic_decode(decoder)
+      decoder_output = tf.contrib.seq2seq.dynamic_decode(
+        decoder, swap_memory=bool(self.num_gpus))
       logits = decoder_output[0].rnn_output
     else:
       # To successfully build the graph just fill the logits with garbage 
