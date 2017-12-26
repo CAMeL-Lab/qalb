@@ -5,6 +5,7 @@ from abc import ABCMeta
 import re
 
 import tensorflow as tf
+from tensorflow.python.client import device_lib
 
 
 ### GENERAL
@@ -60,6 +61,14 @@ def get_trainables():
   for tvar in tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES):
     result[tvar.name] = sess.run(tvar).tolist()
   return result
+
+
+### HARDWARE UTILS
+
+def get_available_gpus():
+  """Get all available GPUs in a list."""
+  local_device_protos = device_lib.list_local_devices()
+  return [x.name for x in local_device_protos if x.device_type == 'GPU']
 
 
 ### MISC UTILS
