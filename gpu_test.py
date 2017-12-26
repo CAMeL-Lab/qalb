@@ -34,11 +34,12 @@ for i in range(STEP_SIZE, (NUM_STEPS + 1) * STEP_SIZE, STEP_SIZE):
     last_line = line.rstrip().decode('utf-8') 
     print(last_line)
     
-    m = re.match(r'Global step {} \(([0-9]+)s'.format(expected_step), last_line)
+    m = re.match(r'Global step (?:[0-9]+) \(([0-9\.]+)s', last_line)
     if m:
       step_runtimes.append(float(m.group(1)))
       expected_step += 1
       if expected_step >= 10:
+        print("Stopping...")
         p.kill()
         break
   
