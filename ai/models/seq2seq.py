@@ -6,6 +6,7 @@ import tensorflow as tf
 # pylint: disable=no-name-in-module
 from tensorflow.python.layers.core import Dense
 
+from ai import get_available_gpus
 from ai.models import BaseModel
 
 
@@ -22,7 +23,7 @@ class Seq2Seq(BaseModel):
                batch_size=32, embedding_size=32, hidden_size=256, rnn_layers=2,
                bidirectional_encoder=False, bidirectional_mode='add',
                use_lstm=False, attention=None, dropout=1., max_grad_norm=5.,
-               epsilon=1e-8, beam_size=1, **kw):
+               epsilon=1e-8, beam_size=1, gpu_config=None, **kw):
     """Keyword args:
        `num_types`: number of unique types (e.g. vocabulary or alphabet size),
        `max_encoder_length`: max length of the encoder,
@@ -47,7 +48,10 @@ class Seq2Seq(BaseModel):
        `dropout`: keep probability for the non-recurrent connections between
         RNN cells. Defaults to 1.0; i.e. no dropout,
        `max_grad_norm`: clip gradients to maximally this norm,
-       `epsilon`: small numerical constant for AdamOptimizer (default 1e-8)."""
+       `epsilon`: small numerical constant for AdamOptimizer (default 1e-8),
+       `beam_size`: width of beam search (1=greedy, max=Viterbi),
+       `gpu_config`: 'multi_workers' or 'multi_gpu' (none by default). Note that
+                     'multi_gpu' is meant to be used if there are >=2 GPUs."""
     self.num_types = num_types
     self.max_encoder_length = max_encoder_length
     self.max_decoder_length = max_decoder_length
@@ -66,6 +70,11 @@ class Seq2Seq(BaseModel):
     self.max_grad_norm = max_grad_norm
     self.epsilon = epsilon
     self.beam_size = beam_size
+    # Make sure there are GPUs available if we are to do device placement
+    self.num_gpus = len(get_available_gpus())
+    self.gpu_config = None
+    if self.num_gpus:
+      self.gpu_config = gpu_config
     # Use graph variables for learning rates to allow them to be modified/saved
     self.lr = tf.Variable(
       1e-3, trainable=False, dtype=tf.float32, name='learning_rate')
@@ -139,7 +148,7 @@ class Seq2Seq(BaseModel):
     return tf.nn.embedding_lookup(self.embedding_kernel, ids)
   
   
-  def rnn_cell(self, num_units=None, attention_mechanism=None):
+  def rnn_cell(self, num_units=None, attention_mechanism=None, gpu=None):
     """Get a new RNN cell with wrappers according to the initial config."""
     cell = None
     
@@ -162,6 +171,9 @@ class Seq2Seq(BaseModel):
       cell = tf.contrib.rnn.DropoutWrapper(
         cell, input_keep_prob=self.dropout, output_keep_prob=self.dropout)
     
+    if gpu:
+      cell = tf.contrib.rnn.DeviceWrapper(cell, gpu)
+    
     return cell
   
   
@@ -171,8 +183,21 @@ class Seq2Seq(BaseModel):
     # We make only the first encoder layer bidirectional to capture the context
     # (Wu et al., https://arxiv.org/pdf/1609.08144.pdf)
     if self.bidirectional_encoder:
+      
+      # Initialize all RNN cells and put them in their respective devices
+      fw_cell_gpu = None
+      bw_cell_gpu = None
+      if self.gpu_config == 'multi_gpu':
+        fw_cell_gpu = '/gpu:0'
+        bw_cell_gpu = '/gpu:1'
+      # elif self.gpu_config == 'multi_worker':
+      #   fw_cell_gpu = '/gpu:{}'.format(i)
+      #   fw_cell_gpu = '/gpu:{}'.format(i)
+      fw_cell = self.rnn_cell(gpu=fw_cell_gpu)
+      bw_cell = self.rnn_cell(gpu=bw_cell_gpu)
+      
       (encoder_fw_out, encoder_bw_out), _ = tf.nn.bidirectional_dynamic_rnn(
-        self.rnn_cell(), self.rnn_cell(), encoder_input, dtype=tf.float32,
+        fw_cell, bw_cell, encoder_input, dtype=tf.float32,
         sequence_length=self.input_lengths)
       
       # Postprocess the bidirectional output according to the initial config
@@ -184,16 +209,30 @@ class Seq2Seq(BaseModel):
           encoder_output = tf.layers.dense(
             encoder_output, self.hidden_size, name='bidirectional_projection')
     else:
+      
+      first_cell_gpu = None
+      if self.gpu_config == 'multi_gpu':
+        first_cell_gpu = '/gpu:0'
+      # elif self.gpu_config == 'multi_worker':
+      #   first_cell_gpu = '/gpu:{}'.format(i)
       encoder_output, _ = tf.nn.dynamic_rnn(
-        self.rnn_cell(), encoder_input, dtype=tf.float32,
+        self.rnn_cell(gpu=first_cell_gpu), encoder_input, dtype=tf.float32,
         sequence_length=self.input_lengths)
     
     # Only for deep RNN architectures
     if self.rnn_layers > 1:
-      encoder_cells = tf.contrib.rnn.MultiRNNCell(
-        [self.rnn_cell() for _ in range(self.rnn_layers - 1)])
+      
+      if self.gpu_config == 'multi_gpu':
+        cells = [self.rnn_cell(gpu='/gpu:{}'.format(j % self.num_gpus))
+                 for j in range(1, self.rnn_layers)]
+      # elif self.gpu_config == 'multi_worker':
+      #   cells = [self.rnn_cell(gpu='/gpu:{}'.format(i))
+      #            for _ in range(1, self.rnn_layers)]
+      else:
+        cells = [self.rnn_cell() for _ in range(1, self.rnn_layers)]
+      
       encoder_output, _ = tf.nn.dynamic_rnn(
-        encoder_cells, encoder_output, dtype=tf.float32,
+        tf.contrib.rnn.MultiRNNCell(cells), encoder_output, dtype=tf.float32,
         sequence_length=self.input_lengths)
     
     # We only use beam size > 1 during decoding
@@ -212,7 +251,7 @@ class Seq2Seq(BaseModel):
       final_encoder_lengths = tf.contrib.seq2seq.tile_batch(
         final_encoder_lengths, self.beam_size)
     
-    # The first RNN is wrapped with the attention mechanism
+    # The last RNN layer is wrapped with the attention mechanism
     attention_mechanism = None
     if self.attention == 'bahdanau':
       attention_mechanism = tf.contrib.seq2seq.BahdanauAttention(
@@ -223,7 +262,14 @@ class Seq2Seq(BaseModel):
         self.hidden_size, encoder_output,
         memory_sequence_length=final_encoder_lengths)
     
-    decoder_cell = self.rnn_cell(attention_mechanism=attention_mechanism)
+    # Because attention is last, don't necessarily use the first GPU for this
+    decoder_gpu = None
+    if self.gpu_config == 'multi_gpu':
+      decoder_gpu = '/gpu:{}'.format(self.rnn_layers % self.num_gpus)
+    # elif self.gpu_config == 'multi_worker':
+    #   decoder_gpu = '/gpu:{}'.format(i)
+    decoder_cell = self.rnn_cell(
+      attention_mechanism=attention_mechanism, gpu=decoder_gpu)
     
     # Use the first output of the encoder to learn an initial decoder state
     initial_state_pass = tf.split(tf.layers.dense(
@@ -243,8 +289,17 @@ class Seq2Seq(BaseModel):
     # For deep RNNs, stack the cells and use an initial state that merges the
     # initial state (maybe with attention) with the rest of the learned states
     if self.rnn_layers > 1:
-      decoder_cell = tf.contrib.rnn.MultiRNNCell(
-        [self.rnn_cell() for _ in range(self.rnn_layers - 1)] + [decoder_cell])
+      
+      if self.gpu_config == 'multi_gpu':
+        cells = [self.rnn_cell(gpu='/gpu:{}'.format(j % self.num_gpus))
+                 for j in range(self.rnn_layers - 1)]
+      # elif self.gpu_config == 'multi_worker':
+      #   cells = [self.rnn_cell(gpu='/gpu:{}'.format(i))
+      #            for _ in range(self.rnn_layers - 1)]
+      else:
+        cells = [self.rnn_cell() for _ in range(self.rnn_layers - 1)]
+      
+      decoder_cell = tf.contrib.rnn.MultiRNNCell(cells + [decoder_cell])
       initial_state = tuple(list(initial_state_pass[:-1]) + [initial_state])
     
     dense = Dense(self.num_types, name='dense')
