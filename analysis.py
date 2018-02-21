@@ -7,6 +7,7 @@ import io
 import re
 import sys
 
+import numpy as np
 import editdistance
 
 from ai.datasets.qalb import apply_corrections
@@ -141,31 +142,37 @@ def beautify_output(m2_output, seq_number):
   print('')
   print(eval_str.format('LDIS', lev))
   print(eval_str.format('LDEN', lev_density))
+  print('#CORR\t', num_correct_edits)
+  print('#PROP\t', len(proposed_edits))
+  print('#GOLD\t', len(gold_edits))
   print(eval_str.format('P', precision))
   print(eval_str.format('R', recall))
   print(eval_str.format('F1', f1))
   print("-" * 80)
   
-  return lev, lev_density, precision, recall, f1
+  return np.array([
+    lev, lev_density, num_correct_edits, len(proposed_edits), len(gold_edits)])
 
 
 with io.open(M2_PATH, encoding='utf-8') as f:
   # All the units are separated by 43 dashes. The last element after splitting
   # this way would be the final scores.
-  units = f.read().split('-'  * 43)
-  lev, lev_density, precision, recall, f1 = [0] * 5
+  units = f.read().split('-' * 43)
+  results = np.zeros(5)
   for i, unit in enumerate(units[:-1]):
-    _lev, _lev_density, _precision, _recall, _f1 = beautify_output(unit, i)
-    lev += _lev
-    lev_density += _lev_density
-    precision += _precision
-    recall += _recall
-    f1 += _f1
-  
+    results += beautify_output(unit, i)
   n = len(units) - 1
   eval_str = '{}\t{:10.4f}'
-  print(eval_str.format('LDIS', lev / n))
-  print(eval_str.format('LDEN', lev_density / n))
-  print(eval_str.format('P', precision / n))
-  print(eval_str.format('R', recall / n))
-  print(eval_str.format('F1', f1 / n))
+  print(eval_str.format('LDIS', results[0] / n))
+  print(eval_str.format('LDEN', results[1] / n))
+  
+  correct, proposed, gold = list(map(int, results[2:]))
+  p = correct / proposed
+  r = correct / gold
+  
+  print('#correct\t', correct)
+  print('#proposed\t', proposed)
+  print('#gold\t', gold)
+  print(eval_str.format('P', p))
+  print(eval_str.format('R', r))
+  print(eval_str.format('F1', f1_score(p, r)))
