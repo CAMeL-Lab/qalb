@@ -1,10 +1,10 @@
 #!/bin/bash
 
-#SBATCH --array=1-1
+#SBATCH --array=1-5
 #SBATCH -p serial
-#SBATCH --cpus-per-task=8
+#SBATCH --cpus-per-task=4
 #SBATCH --mem=32768
-#SBATCH --time=36:00:00
+#SBATCH --time=48:00:00
 
 module purge
 module load anaconda/2-4.1.1
@@ -15,14 +15,11 @@ source activate tf
 
 gold="QALB.dev"  # make sure to drop the .gold or .m2 extension
 case "$SLURM_ARRAY_TASK_ID" in
-"1") dataset="QALB.dev.orig" config="previous_best" ;;
-"2") dataset="QALB.dev.mada" config="with_madamira --extension=mada" ;;
-"3") dataset="QALB.dev.orig" config="soft500 --p_sample_decay=500" ;;
-"4") dataset="QALB.dev.orig" config="hard500 --p_sample_decay=500 --soft_p_sample=False" ;;
-"5") dataset="QALB.dev.orig" config="soft750 --p_sample_decay=750" ;;
-"6") dataset="QALB.dev.orig" config="hard750 --p_sample_decay=750 --soft_p_sample=False" ;;
-"7") dataset="QALB.dev.orig" config="soft1000 --p_sample_decay=1000" ;;
-"8") dataset="QALB.dev.orig" config="hard1000 --p_sample_decay=1000 --soft_p_sample=False" ;;
+"1") dataset="QALB.dev.orig" config="orig --extension=orig" ;;
+"2") dataset="QALB.dev.mle" config="mle --extension=mle" ;;
+"3") dataset="QALB.dev.mada" config="mada --extension=mada" ;;
+"4") dataset="QALB.dev.mada.mle" config="mada_mle --extension=mada.mle" ;;
+"5") dataset="QALB.dev.mada.mle" config="mle_mada --extension=mle.mada" ;;
 esac
 
 ### END ###
