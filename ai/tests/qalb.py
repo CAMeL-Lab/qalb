@@ -34,8 +34,7 @@ tf.app.flags.DEFINE_float('initial_p_sample', .3, "Initial decoder sampling"
                           " probability (0=ground truth, 1=use predictions).")
 tf.app.flags.DEFINE_float('final_p_sample', .3, "Final decoder sampling"
                           " probability (0=ground truth, 1=use predictions).")
-tf.app.flags.DEFINE_float('width_p_sample', 0, "Width of p_sample decay.")
-tf.app.flags.DEFINE_integer('parse_repeated', 3, "Set to > 1 to compress"
+tf.app.flags.DEFINE_integer('parse_repeated', 0, "Set to > 1 to compress"
                             " contiguous patterns in the data pipeline.")
 
 ### CONFIG
@@ -45,10 +44,7 @@ tf.app.flags.DEFINE_integer('num_steps_per_eval', 50, "Number of steps to wait"
                             " before running the graph with the dev set.")
 tf.app.flags.DEFINE_integer('max_epochs', 20, "Number of epochs to run"
                             " (0 = no limit).")
-tf.app.flags.DEFINE_string('extension', 'mada', "Extensions of data files.")
-tf.app.flags.DEFINE_string('gpu_config', 'multi_gpu', "Device placement accepts"
-                           "'multi_gpu' to use multiple GPUs in the graph, or"
-                           "'mutli_worker' to replicate the graph for each GPU")
+tf.app.flags.DEFINE_string('extension', 'mada.mle', "Extensions of data files.")
 tf.app.flags.DEFINE_string('decode', None, "Set to a path to run on a file.")
 tf.app.flags.DEFINE_string('output_path', os.path.join('output', 'result.txt'),
                            "Name of the output file with decoding results.")
@@ -103,8 +99,8 @@ def train():
       bidirectional_encoder=FLAGS.bidirectional_encoder,
       bidirectional_mode=FLAGS.bidirectional_mode,
       use_lstm=FLAGS.use_lstm, attention=FLAGS.attention, dropout=FLAGS.dropout,
-      max_grad_norm=FLAGS.max_grad_norm, gpu_config=FLAGS.gpu_config,
-      beam_size=1, restore=FLAGS.restore, model_name=FLAGS.model_name)
+      max_grad_norm=FLAGS.max_grad_norm, beam_size=1, restore=FLAGS.restore,
+      model_name=FLAGS.model_name)
   
   # Allow TensorFlow to resort back to CPU when we try to set an operation to
   # a GPU where there's only a CPU implementation, rather than crashing.
@@ -134,10 +130,12 @@ def train():
         step = m.global_step.eval()
         
         # Scheduled sampling decay
-        if FLAGS.width_p_sample:
-          i = FLAGS.initial_p_sample
-          f = FLAGS.final_p_sample
-          p = min(f, i + step * (f - i) / FLAGS.width_p_sample)
+        i = FLAGS.initial_p_sample
+        f = FLAGS.final_p_sample
+        if i != f:
+          # The stopping point is based on the max epochs
+          total_train_steps = len(batches) * FLAGS.max_epochs
+          p = min(f, i + step * (f - i) / total_train_steps)
           sess.run(tf.assign(m.p_sample, p))
         
         # Gradient descent and backprop
