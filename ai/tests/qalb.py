@@ -6,7 +6,6 @@ import re
 import sys
 import timeit
 
-import numpy as np
 import tensorflow as tf
 import editdistance
 
@@ -14,7 +13,7 @@ from ai.datasets import QALB
 from ai.models import Seq2Seq
 
 
-### HYPERPARAMETERS
+# HYPERPARAMETERS
 tf.app.flags.DEFINE_float('lr', 5e-4, "Initial learning rate.")
 tf.app.flags.DEFINE_integer('batch_size', 128, "Batch size.")
 tf.app.flags.DEFINE_integer('embedding_size', 128, "Embedding dimensionality.")
@@ -38,14 +37,14 @@ tf.app.flags.DEFINE_float('final_p_sample', .3, "Final decoder sampling"
 tf.app.flags.DEFINE_integer('parse_repeated', 0, "Set to > 1 to compress"
                             " contiguous patterns in the data pipeline.")
 
-### CONFIG
+# CONFIG
 tf.app.flags.DEFINE_integer('max_sentence_length', 400, "Max. word length of"
                             " training examples (both inputs and labels).")
 tf.app.flags.DEFINE_integer('num_steps_per_eval', 50, "Number of steps to wait"
                             " before running the graph with the dev set.")
 tf.app.flags.DEFINE_integer('max_epochs', 20, "Number of epochs to run"
                             " (0 = no limit).")
-tf.app.flags.DEFINE_string('extension', 'mada.mle', "Extensions of data files.")
+tf.app.flags.DEFINE_string('extension', 'mada.mle', "Extension of data files.")
 tf.app.flags.DEFINE_string('decode', None, "Set to a path to run on a file.")
 tf.app.flags.DEFINE_string('output_path', os.path.join('output', 'result.txt'),
                            "Name of the output file with decoding results.")
@@ -74,7 +73,6 @@ def levenshtein(proposed, gold, normalize=False):
 
 def train():
   """Run a loop that continuously trains the model."""
-  
   print("Building dynamic character-level QALB data...")
   dataset = QALB(
     'QALB', parse_repeated=FLAGS.parse_repeated, extension=FLAGS.extension,
@@ -99,9 +97,9 @@ def train():
       hidden_size=FLAGS.hidden_size, rnn_layers=FLAGS.rnn_layers,
       bidirectional_encoder=FLAGS.bidirectional_encoder,
       bidirectional_mode=FLAGS.bidirectional_mode,
-      use_lstm=FLAGS.use_lstm, attention=FLAGS.attention, dropout=FLAGS.dropout,
-      max_grad_norm=FLAGS.max_grad_norm, beam_size=1, restore=FLAGS.restore,
-      model_name=FLAGS.model_name)
+      use_lstm=FLAGS.use_lstm, attention=FLAGS.attention, 
+      dropout=FLAGS.dropout, max_grad_norm=FLAGS.max_grad_norm, beam_size=1,
+      restore=FLAGS.restore, model_name=FLAGS.model_name)
   
   # Allow TensorFlow to resort back to CPU when we try to set an operation to
   # a GPU where there's only a CPU implementation, rather than crashing.
@@ -174,7 +172,7 @@ def train():
           valid_inputs = untokenize_batch(dataset, valid_inputs)
           valid_labels = untokenize_batch(dataset, valid_labels)
           valid_output = untokenize_batch(dataset, valid_output)
-          infer_output = untokenize_batch(dataset, infer_output[:,:,0])
+          infer_output = untokenize_batch(dataset, infer_output)
           
           # Run evaluation metrics
           lev = levenshtein(infer_output, valid_labels)
@@ -219,7 +217,6 @@ def train():
 
 def decode():
   """Run a blind test on the file with path given by the `decode` flag."""
-  
   print("Reading data...")
   with io.open(FLAGS.decode, encoding='utf-8') as test_file:
     lines = test_file.readlines()
@@ -260,7 +257,7 @@ def decode():
         while len(ids) < max_length:
           ids.append(dataset.type_to_ix['_PAD'])
         outputs = sess.run(m.generative_output, feed_dict={m.inputs: [ids]})
-        top_line = untokenize_batch(dataset, outputs[:,:,0])[0]
+        top_line = untokenize_batch(dataset, outputs)[0]
         # Sequences of text will only be repeated up to 5 times.
         top_line = re.sub(r'(.+?)\1{5,}', lambda m: m.group(1) * 5, top_line)
         output_file.write(top_line + '\n')
@@ -269,7 +266,7 @@ def decode():
 
 
 def main(_):
-  """Called by `tf.app.run` method."""
+  """Callee of `tf.app.run` the method."""
   if not FLAGS.model_name:
     raise ValueError(
       "Undefined model name. Perhaps you forgot to set the --model_name flag?")
@@ -278,6 +275,7 @@ def main(_):
     decode()
   else:
     train()
+
 
 if __name__ == '__main__':
   tf.app.run()

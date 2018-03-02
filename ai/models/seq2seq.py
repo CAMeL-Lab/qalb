@@ -1,7 +1,6 @@
-"""TODO: add descriptive docstring."""
+"""Sequence to Sequence model with an attention mechanism."""
 
 import tensorflow as tf
-# pylint: disable=no-name-in-module
 from tensorflow.python.layers.core import Dense
 
 from ai.utils import get_available_gpus
@@ -9,12 +8,6 @@ from ai.models import BaseModel
 
 
 class Seq2Seq(BaseModel):
-  """Sequence to Sequence model with an attention mechanism. Note that for the
-     best results, the model assumes that the inputs and targets are
-     preprocessed with the following conventions:
-     1. All the inputs are padded with a unique `pad_id`,
-     2. All the labels have a unique `eos_id` as the final token,
-     3. A `go_id` is reserved for the model to provide to the decoder."""
   
   def __init__(self, num_types=0, max_encoder_length=99, max_decoder_length=99,
                pad_id=0, eos_id=1, go_id=2,
@@ -22,34 +15,37 @@ class Seq2Seq(BaseModel):
                bidirectional_encoder=False, bidirectional_mode='add',
                use_lstm=False, attention=None, dropout=1., max_grad_norm=5.,
                epsilon=1e-8, beam_size=1, gpu_config=None, **kw):
-    """Keyword args:
-       `num_types`: number of unique types (e.g. vocabulary or alphabet size),
-       `max_encoder_length`: max length of the encoder,
-       `max_decoder_length`: max length of the decoder,
-       `pad_id`: the integer id that represents padding (defaults to 0),
-       `eos_id`: the integer id that represents the end of the sequence,
-       `go_id`: the integer id fed to the decoder as the first input,
-       `batch_size`: minibatch size,
-       `embedding_size`: dimensionality of the embeddings,
-       `hidden_size`: dimensionality of the hidden units for the RNNs,
-       `rnn_layers`: number of RNN layers for the encoder and decoder,
-       `bidirectional_encoder`: whether to use a bidirectional encoder RNN,
-       `bidirectional_mode`: string for the bidirectional RNN architecture:
-        'add' (default): add the forward and backward hidden states,
-        'project': use a projection matrix to resize the concatenation of the
-                   forward and backward hidden states to `embedding_size`,
-        'concat': concatenate the forward and backward inputs and pass that
-                  as the input to the next RNN,
-       `use_lstm`: set to False to use a GRU cell (Cho et al.,
-        https://arxiv.org/abs/1406.1078),
-       `attention`: 'bahdanau', or 'luong' (none by default),
-       `dropout`: keep probability for the non-recurrent connections between
-        RNN cells. Defaults to 1.0; i.e. no dropout,
-       `max_grad_norm`: clip gradients to maximally this norm,
-       `epsilon`: small numerical constant for AdamOptimizer (default 1e-8),
-       `beam_size`: width of beam search (1=greedy, max=Viterbi),
-       `gpu_config`: 'multi_workers' or 'multi_gpu' (none by default). Note that
-                     'multi_gpu' is meant to be used if there are >=2 GPUs."""
+    """Build the entire computational graph.
+    
+    Keyword args:
+    `num_types`: number of unique types (e.g. vocabulary or alphabet size),
+    `max_encoder_length`: max length of the encoder,
+    `max_decoder_length`: max length of the decoder,
+    `pad_id`: the integer id that represents padding (defaults to 0),
+    `eos_id`: the integer id that represents the end of the sequence,
+    `go_id`: the integer id fed to the decoder as the first input,
+    `batch_size`: minibatch size,
+    `embedding_size`: dimensionality of the embeddings,
+    `hidden_size`: dimensionality of the hidden units for the RNNs,
+    `rnn_layers`: number of RNN layers for the encoder and decoder,
+    `bidirectional_encoder`: whether to use a bidirectional encoder RNN,
+    `bidirectional_mode`: string for the bidirectional RNN architecture:
+      'add' (default): add the forward and backward hidden states,
+      'project': use a projection matrix to resize the concatenation of the
+                 forward and backward hidden states to `embedding_size`,
+      'concat': concatenate the forward and backward inputs and pass that
+                as the input to the next RNN,
+    `use_lstm`: set to False to use a GRU cell (Cho et al.,
+     https://arxiv.org/abs/1406.1078),
+    `attention`: 'bahdanau', or 'luong' (none by default),
+    `dropout`: keep probability for the non-recurrent connections between RNN
+               cells. Defaults to 1.0; i.e. no dropout,
+    `max_grad_norm`: clip gradients to maximally this norm,
+    `epsilon`: small numerical constant for AdamOptimizer (default 1e-8),
+    `beam_size`: width of beam search (1=greedy, max=Viterbi),
+    `gpu_config`: 'multi_workers' or 'multi_gpu' (none by default). Note
+                  that 'multi_gpu' is meant to be used if there are >=2 GPUs.
+    """
     self.num_types = num_types
     self.max_encoder_length = max_encoder_length
     self.max_decoder_length = max_decoder_length
@@ -82,10 +78,9 @@ class Seq2Seq(BaseModel):
       0., trainable=False, dtype=tf.float32, name='sampling_probability')
     super().__init__(**kw)
   
-  
   def build_graph(self):
     
-    ### Placeholders
+    # Placeholders
     self.inputs = tf.placeholder(
       tf.int32, name='inputs',
       shape=[self.batch_size, self.max_encoder_length])
@@ -123,7 +118,8 @@ class Seq2Seq(BaseModel):
     self.perplexity = tf.exp(loss, name='perplexity')
     self.perplexity_summary = tf.summary.scalar('perplexity', self.perplexity)
     self.lev_summary = tf.summary.scalar('lev', self.lev)
-    self.lev_density_summary = tf.summary.scalar('lev_density', self.lev_density)
+    self.lev_density_summary = tf.summary.scalar(
+      'lev_density', self.lev_density)
     
     # Index outputs (greedy)
     self.output = tf.argmax(
@@ -138,13 +134,13 @@ class Seq2Seq(BaseModel):
       self.train_step = optimizer.apply_gradients(
         zip(grads, tvars), global_step=self.global_step)
   
-  
   def get_embeddings(self, ids):
-    """Performs embedding lookup. Useful as a method for decoder helpers.
-       Note this method requires the `embedding_kernel` attribute to be
-       declared before being called."""
+    """Perform embedding lookup. Useful as a method for decoder helpers.
+    
+    Note this method requires the `embedding_kernel` attribute to be
+    declared before being called.
+    """
     return tf.nn.embedding_lookup(self.embedding_kernel, ids)
-  
   
   def rnn_cell(self, num_units=None, attention_mechanism=None, gpu=None):
     """Get a new RNN cell with wrappers according to the initial config."""
@@ -174,10 +170,8 @@ class Seq2Seq(BaseModel):
     
     return cell
   
-  
   def build_encoder(self, encoder_input):
     """Build the RNN stack for the encoder, depending on the initial config."""
-    
     # We make only the first encoder layer bidirectional to capture the context
     # (Wu et al., https://arxiv.org/pdf/1609.08144.pdf)
     if self.bidirectional_encoder:
@@ -238,10 +232,8 @@ class Seq2Seq(BaseModel):
       return tf.contrib.seq2seq.tile_batch(encoder_output, self.beam_size)
     return encoder_output
   
-  
   def build_decoder(self, encoder_output):
     """Build the decoder RNN stack and the final prediction layer."""
-    
     beam_batch_size = self.batch_size
     final_encoder_lengths = self.input_lengths
     if self.beam_size > 1:
@@ -330,4 +322,4 @@ class Seq2Seq(BaseModel):
       # To successfully build the graph just fill the logits with garbage 
       logits = generative_output[0].beam_search_decoder_output.scores
     
-    return logits, generative_output[0].predicted_ids
+    return logits, generative_output[0].predicted_ids[:, :, 0]
