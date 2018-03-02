@@ -1,7 +1,5 @@
 """TODO: add descriptive docstring."""
 
-import os
-
 import tensorflow as tf
 # pylint: disable=no-name-in-module
 from tensorflow.python.layers.core import Dense
