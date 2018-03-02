@@ -124,18 +124,12 @@ def beautify_output(m2_output, seq_number):
   if len(proposed_edits):
     precision = num_correct_edits / len(proposed_edits)
   else:
-    if len(gold_edits):
-      precision = 0
-    else:
-      precision = 1
+    precision = int(not len(gold_edits))
   
   if len(gold_edits):
     recall = num_correct_edits / len(gold_edits)
   else:
-    if len(proposed_edits):
-      recall = 0
-    else:
-      recall = 1
+    recall = int(not len(proposed_edits))
   
   f1 = f1_score(precision, recall)
   
@@ -167,8 +161,16 @@ with io.open(M2_PATH, encoding='utf-8') as f:
   print(eval_str.format('LDEN', results[1] / n))
   
   correct, proposed, gold = list(map(int, results[2:]))
-  p = correct / proposed
-  r = correct / gold
+  
+  # Avoid divisions by zero
+  if proposed:
+    p = correct / proposed
+  else:
+    p = int(not gold)
+  if gold:
+    r = correct / gold
+  else:
+    r = int(not proposed)
   
   print('#correct\t', correct)
   print('#proposed\t', proposed)
