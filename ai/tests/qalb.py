@@ -104,8 +104,7 @@ def train():
   
   # Allow TensorFlow to resort back to CPU when we try to set an operation to
   # a GPU where there's only a CPU implementation, rather than crashing.
-  sess_config = tf.ConfigProto(
-    allow_soft_placement=True, log_device_placement=True)
+  sess_config = tf.ConfigProto(allow_soft_placement=True)
   
   with tf.Session(graph=graph, config=sess_config) as sess:
     print("Initializing or restoring model...")
