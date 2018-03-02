@@ -36,6 +36,9 @@ tf.app.flags.DEFINE_float('final_p_sample', .3, "Final decoder sampling"
                           " probability (0=ground truth, 1=use predictions).")
 tf.app.flags.DEFINE_integer('parse_repeated', 0, "Set to > 1 to compress"
                             " contiguous patterns in the data pipeline.")
+tf.app.flags.DEFINE_float('epsilon', 1e-8, "Denominator constant.")
+tf.app.flags.DEFINE_float('beta1', .9, "First order moment decay.")
+tf.app.flags.DEFINE_float('beta2', .999, "Second order moment decay.")
 
 # CONFIG
 tf.app.flags.DEFINE_integer('max_sentence_length', 400, "Max. word length of"
@@ -99,6 +102,7 @@ def train():
       bidirectional_mode=FLAGS.bidirectional_mode,
       use_lstm=FLAGS.use_lstm, attention=FLAGS.attention, 
       dropout=FLAGS.dropout, max_grad_norm=FLAGS.max_grad_norm, beam_size=1,
+      epsilon=FLAGS.epsilon, beta1=FLAGS.beta1, beta2=FLAGS.beta2,
       restore=FLAGS.restore, model_name=FLAGS.model_name)
   
   # Allow TensorFlow to resort back to CPU when we try to set an operation to

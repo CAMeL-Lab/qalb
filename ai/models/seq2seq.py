@@ -14,7 +14,8 @@ class Seq2Seq(BaseModel):
                batch_size=32, embedding_size=32, hidden_size=256, rnn_layers=2,
                bidirectional_encoder=False, bidirectional_mode='add',
                use_lstm=False, attention=None, dropout=1., max_grad_norm=5.,
-               epsilon=1e-8, beam_size=1, gpu_config=None, **kw):
+               epsilon=1e-8, beta1=.9, beta2=.999, beam_size=1,
+               gpu_config=None, **kw):
     """Build the entire computational graph.
     
     Keyword args:
@@ -42,6 +43,8 @@ class Seq2Seq(BaseModel):
                cells. Defaults to 1.0; i.e. no dropout,
     `max_grad_norm`: clip gradients to maximally this norm,
     `epsilon`: small numerical constant for AdamOptimizer (default 1e-8),
+    `beta1`: first order moment decay for AdamOptimizer (default .9),
+    `beta2`: second order moment decay for AdamOptimizer (default .999),
     `beam_size`: width of beam search (1=greedy, max=Viterbi),
     `gpu_config`: 'multi_workers' or 'multi_gpu' (none by default). Note
                   that 'multi_gpu' is meant to be used if there are >=2 GPUs.
@@ -63,6 +66,8 @@ class Seq2Seq(BaseModel):
     self.dropout = dropout
     self.max_grad_norm = max_grad_norm
     self.epsilon = epsilon
+    self.beta1 = beta1
+    self.beta2 = beta2
     self.beam_size = beam_size
     # Make sure there are GPUs available if we are to do device placement
     self.num_gpus = len(get_available_gpus())
@@ -130,7 +135,8 @@ class Seq2Seq(BaseModel):
       tvars = tf.trainable_variables()
       grads, _ = tf.clip_by_global_norm(
         tf.gradients(loss, tvars), self.max_grad_norm)
-      optimizer = tf.train.AdamOptimizer(self.lr, epsilon=self.epsilon)
+      optimizer = tf.train.AdamOptimizer(
+        self.lr, epsilon=self.epsilon, beta1=self.beta1, beta2=self.beta2)
       self.train_step = optimizer.apply_gradients(
         zip(grads, tvars), global_step=self.global_step)
   
