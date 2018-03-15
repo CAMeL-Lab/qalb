@@ -25,7 +25,7 @@ For running created tests, run `python -m ai.tests.filename` in the top-level di
 
 ## Evaluations
 
-To compute the F1 score, use `python ai/tests/m2scripts/m2scorer.py --beta 1 -v $1 $2` where `$1` is the output file and `$2` is the `.m2` file.
+To compute the F1 score, use `python2 ai/tests/m2scripts/m2scorer.py --beta 1 -v $1 $2` where `$1` is the output file and `$2` is the `.m2` file.
 
 To compute the Levenshtein score, use `python levenshtein.py $1 $2` where `$1` is the output file and `$2` is the `.gold` file.
 
