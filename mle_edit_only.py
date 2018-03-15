@@ -1,9 +1,7 @@
 """Maximum likelihood estimation preprocessor.
 
 This program takes as input an m2 file (should be training data) and any input
-file, and parses that input file with MLE over counts in the m2 file. For
-cleanup purposes it removes kashidas as a preprocessing step (empirically found
-to be better than removing them after the MLE).
+file, and parses that input file with MLE over counts in the m2 file.
 """
 
 import io
@@ -11,8 +9,8 @@ import re
 import sys
 
 
-KASHIDA = u'\u0640'
-EDIT_RE = r'A ([0-9]+) ([0-9]+)\|\|\|[^\|]+\|\|\|([^\|]*)'
+def count_edit_type(edit_type, lines):
+  return sum(map(lambda l: int(bool(re.search(edit_type, l))), lines))
 
 
 try:
@@ -35,15 +33,10 @@ with io.open(M2_PATH, encoding='utf-8') as f:
     # Source sentence is the first, edits are all others
     source = example[0].split()[1:]
     for edit in example[1:]:
-      m = re.match(EDIT_RE, edit)
+      m = re.match(r'A ([0-9]+) [0-9]+\|\|\|Edit\|\|\|([^\|]+)\|', edit)
       if m:
-        try:
-          word = source[int(m.group(1))]
-        except IndexError:
-          pass
-        # This tuple has format (id_difference, correction_str)
-        correction = (int(m.group(2)) - int(m.group(1)), m.group(3))
-        
+        word = source[int(m.group(1))]
+        correction = m.group(2)
         if word not in counts:
           counts[word] = {'_KEEP': 0}
         if correction in counts[word]:
@@ -51,7 +44,7 @@ with io.open(M2_PATH, encoding='utf-8') as f:
         else:
           counts[word][correction] = 1
   
-  # Count all occurences of word
+  # Count all occurences of word kept
   for example in train_examples:
     source = example.split('\n')[0].split()[1:]
     for word in source:
@@ -59,25 +52,22 @@ with io.open(M2_PATH, encoding='utf-8') as f:
         counts[word]['_KEEP'] += 1
   
   # Take difference to count number of times of word kept as is
-  for word, corrections in counts.items():
-    total = corrections['_KEEP']
-    not_kept = sum(corrections.values()) - total
-    counts[word]['_KEEP'] = total - not_kept
+  for source, targets in counts.items():
+    total = targets['_KEEP']
+    not_kept = sum(targets.values()) - total
+    counts[source]['_KEEP'] = total - not_kept
     
 
 with io.open(INPUT_PATH, encoding='utf-8') as f:
   for line in f:
-    line = line.replace(KASHIDA, '')
-    new_line = line.split()
-    # We want an analog to "reverse(enumerate(line.split()))"
-    i = len(new_line)
-    for word in reversed(line.split()):
-      i -= 1
+    new_line = []
+    for word in line.split():
       if word in counts:
         targets = counts[word]
-        correction = max(targets, key=lambda k: targets[k])  # argmax
-        if correction != '_KEEP':
-          diff = correction[0]
-          correction_list = correction[1].split()
-          new_line = new_line[:i] + correction_list + new_line[i + diff:]
+        argmax = max(targets, key=lambda k: targets[k])
+        if argmax == '_KEEP':
+          argmax = word
+        new_line.append(argmax)
+      else:
+        new_line.append(word)
     print(' '.join(new_line))
