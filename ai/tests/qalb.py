@@ -34,6 +34,8 @@ tf.app.flags.DEFINE_float('initial_p_sample', .3, "Initial decoder sampling"
                           " probability (0=ground truth, 1=use predictions).")
 tf.app.flags.DEFINE_float('final_p_sample', .3, "Final decoder sampling"
                           " probability (0=ground truth, 1=use predictions).")
+tf.app.flags.DEFINE_integer('epochs_p_sample', 20, "Duration in epochs of"
+                            " schedule sampling (determines rate of change).")
 tf.app.flags.DEFINE_integer('parse_repeated', 0, "Set to > 1 to compress"
                             " contiguous patterns in the data pipeline.")
 tf.app.flags.DEFINE_float('epsilon', 1e-8, "Denominator constant.")
@@ -45,9 +47,9 @@ tf.app.flags.DEFINE_integer('max_sentence_length', 400, "Max. word length of"
                             " training examples (both inputs and labels).")
 tf.app.flags.DEFINE_integer('num_steps_per_eval', 50, "Number of steps to wait"
                             " before running the graph with the dev set.")
-tf.app.flags.DEFINE_integer('max_epochs', 20, "Number of epochs to run"
+tf.app.flags.DEFINE_integer('max_epochs', 30, "Number of epochs to run"
                             " (0 = no limit).")
-tf.app.flags.DEFINE_string('extension', 'mada.mle', "Extension of data files.")
+tf.app.flags.DEFINE_string('extension', 'mada.kmle', "Data files' extension.")
 tf.app.flags.DEFINE_string('decode', None, "Set to a path to run on a file.")
 tf.app.flags.DEFINE_string('output_path', os.path.join('output', 'result.txt'),
                            "Name of the output file with decoding results.")
@@ -136,7 +138,7 @@ def train():
         f = FLAGS.final_p_sample
         if i != f:
           # The stopping point is based on the max epochs
-          total_train_steps = len(batches) * FLAGS.max_epochs
+          total_train_steps = len(batches) * FLAGS.epochs_p_sample
           p = min(f, i + step * (f - i) / total_train_steps)
           sess.run(tf.assign(m.p_sample, p))
         
