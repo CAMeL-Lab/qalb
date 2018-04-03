@@ -62,6 +62,9 @@ tf.app.flags.DEFINE_string('model_name', None, "Name of the output directory.")
 
 
 FLAGS = tf.app.flags.FLAGS
+if FLAGS.word_embeddings:
+  FLAGS.word_embeddings = os.path.join(
+    'ai', 'datasets', 'data', 'gigaword', FLAGS.word_embeddings + '.bin')
 
 
 def untokenize_batch(dataset, id_batch):
@@ -93,8 +96,12 @@ def train():
   
   with graph.as_default():
     
-    if FLAGS.word_embeddings:
-      word_vectors = 
+    we_paths = [
+      os.path.join(
+        'ai', 'datasets', 'data', 'qalb', 'QALB.train.' + FLAGS.extension),
+      os.path.join(
+        'ai', 'datasets', 'data', 'qalb', 'QALB.dev.' + FLAGS.extension),
+    ]
     
     # During training we use beam width 1. There are lots of complications on
     # the implementation, e.g. only tiling during inference.
@@ -114,6 +121,7 @@ def train():
       use_lstm=FLAGS.use_lstm, attention=FLAGS.attention, 
       dropout=FLAGS.dropout, max_grad_norm=FLAGS.max_grad_norm, beam_size=1,
       epsilon=FLAGS.epsilon, beta1=FLAGS.beta1, beta2=FLAGS.beta2,
+      word_embeddings=FLAGS.word_embeddings, word_embeddings_paths=we_paths,
       restore=FLAGS.restore, model_name=FLAGS.model_name)
   
   # Allow TensorFlow to resort back to CPU when we try to set an operation to
@@ -271,7 +279,9 @@ def decode():
       bidirectional_encoder=FLAGS.bidirectional_encoder,
       bidirectional_mode=FLAGS.bidirectional_mode,
       use_lstm=FLAGS.use_lstm, attention=FLAGS.attention,
-      beam_size=FLAGS.beam_size, restore=True, model_name=FLAGS.model_name)
+      beam_size=FLAGS.beam_size, word_embeddings=FLAGS.word_embeddings,
+      word_embeddings_paths=[FLAGS.decode], restore=True,
+      model_name=FLAGS.model_name)
   
   with tf.Session(graph=graph) as sess:
     print("Restoring model...", flush=True)
