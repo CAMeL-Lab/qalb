@@ -8,6 +8,8 @@ import timeit
 
 import tensorflow as tf
 import editdistance
+from scipy import exp
+from scipy.special import lambertw
 
 from ai.datasets import QALB
 from ai.models import Seq2Seq
@@ -32,10 +34,11 @@ tf.app.flags.DEFINE_float('max_grad_norm', 10., "Clip gradients to this norm.")
 tf.app.flags.DEFINE_integer('beam_size', 5, "Beam search size.")
 tf.app.flags.DEFINE_float('initial_p_sample', .3, "Initial decoder sampling"
                           " probability (0=ground truth, 1=use predictions).")
-tf.app.flags.DEFINE_float('final_p_sample', .3, "Final decoder sampling"
+tf.app.flags.DEFINE_float('final_p_sample', .85, "Final decoder sampling"
                           " probability (0=ground truth, 1=use predictions).")
 tf.app.flags.DEFINE_integer('epochs_p_sample', 20, "Duration in epochs of"
                             " schedule sampling (determines rate of change).")
+tf.app.flags.DEFINE_boolean('linear_p_sample', True, "False = sigmoid decay.")
 tf.app.flags.DEFINE_integer('parse_repeated', 0, "Set to > 1 to compress"
                             " contiguous patterns in the data pipeline.")
 tf.app.flags.DEFINE_float('epsilon', 1e-8, "Denominator constant.")
@@ -127,6 +130,17 @@ def train():
     batches = dataset.get_train_batches(m.batch_size)
     epoch = step // len(batches)
     
+    # Scheduled sampling decay
+    i = FLAGS.initial_p_sample
+    f = FLAGS.final_p_sample
+    # The stopping point is based on the max epochs
+    total_train_steps = len(batches) * FLAGS.epochs_p_sample
+    if i != f and not FLAGS.linear_p_sample:
+      k = total_train_steps / (float(lambertw(total_train_steps / 2)) * 2)
+      expk = float(exp(-total_train_steps / k))
+      delta_f = (f - i) * (1 + k) * (1 + k * expk) / (k - k * expk) - f
+      delta_i = (f + delta_f) / (1 + k)
+    
     while not FLAGS.max_epochs or epoch <= FLAGS.max_epochs:
       print("=====EPOCH {}=====".format(epoch))
       sys.stdout.flush()
@@ -134,12 +148,15 @@ def train():
         step = m.global_step.eval()
         
         # Scheduled sampling decay
-        i = FLAGS.initial_p_sample
-        f = FLAGS.final_p_sample
         if i != f:
-          # The stopping point is based on the max epochs
-          total_train_steps = len(batches) * FLAGS.epochs_p_sample
-          p = min(f, i + step * (f - i) / total_train_steps)
+          # Linear decay
+          if FLAGS.linear_p_sample:
+            p = min(f, i + step * (f - i) / total_train_steps)
+          # Inverse sigmoid decay
+          else:
+            expk = float(exp(-step / k))
+            p = min(f, i - delta_i + (f + delta_f) / (1 + k * expk))
+          
           sess.run(tf.assign(m.p_sample, p))
         
         # Gradient descent and backprop
