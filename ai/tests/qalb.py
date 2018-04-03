@@ -3,7 +3,6 @@
 import io
 import os
 import re
-import sys
 import timeit
 
 import tensorflow as tf
@@ -44,6 +43,8 @@ tf.app.flags.DEFINE_integer('parse_repeated', 0, "Set to > 1 to compress"
 tf.app.flags.DEFINE_float('epsilon', 1e-8, "Denominator constant.")
 tf.app.flags.DEFINE_float('beta1', .9, "First order moment decay.")
 tf.app.flags.DEFINE_float('beta2', .999, "Second order moment decay.")
+tf.app.flags.DEFINE_string('word_embeddings', None, "Will search for FastText"
+                           "model at `ai/datasets/data/gigaword/???.bin`.")
 
 # CONFIG
 tf.app.flags.DEFINE_integer('max_sentence_length', 400, "Max. word length of"
@@ -81,19 +82,22 @@ def levenshtein(proposed, gold, normalize=False):
 
 def train():
   """Run a loop that continuously trains the model."""
-  print("Building dynamic character-level QALB data...")
+  print("Building dynamic character-level QALB data...", flush=True)
   dataset = QALB(
     'QALB', parse_repeated=FLAGS.parse_repeated, extension=FLAGS.extension,
     shuffle=True, max_input_length=FLAGS.max_sentence_length,
     max_label_length=FLAGS.max_sentence_length)
   
-  print("Building computational graph...")
+  print("Building computational graph...", flush=True)
   graph = tf.Graph()
+  
   with graph.as_default():
     
+    if FLAGS.word_embeddings:
+      word_vectors = 
+    
     # During training we use beam width 1. There are lots of complications on
-    # the implementation, e.g. only tiling during inference. + this is faster.
-    # pylint: disable=invalid-name
+    # the implementation, e.g. only tiling during inference.
     m = Seq2Seq(
       num_types=dataset.num_types(),
       max_encoder_length=FLAGS.max_sentence_length,
@@ -101,6 +105,8 @@ def train():
       pad_id=dataset.type_to_ix['_PAD'],
       eos_id=dataset.type_to_ix['_EOS'],
       go_id=dataset.type_to_ix['_GO'],
+      space_id=dataset.type_to_ix[(' ',)],
+      ix_to_type=dataset.ix_to_type,
       batch_size=FLAGS.batch_size, embedding_size=FLAGS.embedding_size,
       hidden_size=FLAGS.hidden_size, rnn_layers=FLAGS.rnn_layers,
       bidirectional_encoder=FLAGS.bidirectional_encoder,
@@ -115,8 +121,7 @@ def train():
   sess_config = tf.ConfigProto(allow_soft_placement=True)
   
   with tf.Session(graph=graph, config=sess_config) as sess:
-    print("Initializing or restoring model...")
-    sys.stdout.flush()
+    print("Initializing or restoring model...", flush=True)
     m.start()
     
     # If the model was not restored, initialize the variable hyperparameters.
@@ -142,8 +147,7 @@ def train():
       delta_i = (f + delta_f) / (1 + k)
     
     while not FLAGS.max_epochs or epoch <= FLAGS.max_epochs:
-      print("=====EPOCH {}=====".format(epoch))
-      sys.stdout.flush()
+      print("=====EPOCH {}=====".format(epoch), flush=True)
       while step < (epoch + 1) * len(batches):
         step = m.global_step.eval()
         
@@ -168,7 +172,7 @@ def train():
           sess.run(m.train_step, feed_dict=train_fd)
         
         print("Global step {0} ({1}s)".format(
-          step, timeit.timeit(train_step, number=1)))
+          step, timeit.timeit(train_step, number=1)), flush=True)
         
         if step % FLAGS.num_steps_per_eval == 0:
           valid_inputs, valid_labels = dataset.get_valid_batch(m.batch_size)
@@ -226,33 +230,30 @@ def train():
           print("Output with ground truth:")
           print(valid_output[0])
           print("Greedily decoded output:")
-          print(infer_output[0])
-        
-        sys.stdout.flush()
+          print(infer_output[0], flush=True)
       
       # Epoch about to be done - save, reshuffle the data and get new batches
       print("Saving model...")
       m.save()
-      print("Model saved. Resuming training...")
+      print("Model saved. Resuming training...", flush=True)
       batches = dataset.get_train_batches(m.batch_size)
       epoch += 1
 
 
 def decode():
   """Run a blind test on the file with path given by the `decode` flag."""
-  print("Reading data...")
   with io.open(FLAGS.decode, encoding='utf-8') as test_file:
     lines = test_file.readlines()
     # Get the largest sentence length to set an upper bound to the decoder
     # TODO: add some heuristic to allow that to increase a bit more
     max_length = max([len(line) for line in lines])
     
-  print("Building dynamic word-level QALB data...")
+  print("Building dynamic word-level QALB data...", flush=True)
   dataset = QALB(
     'QALB', parse_repeated=FLAGS.parse_repeated, extension=FLAGS.extension,
     max_input_length=max_length, max_label_length=max_length)
   
-  print("Building computational graph...")
+  print("Building computational graph...", flush=True)
   graph = tf.Graph()
   with graph.as_default():
     # TODO: remove constants dependent on dataset instance; save them in model.
@@ -263,6 +264,8 @@ def decode():
       pad_id=dataset.type_to_ix['_PAD'],
       eos_id=dataset.type_to_ix['_EOS'],
       go_id=dataset.type_to_ix['_GO'],
+      space_id=dataset.type_to_ix[(' ',)],
+      ix_to_type=dataset.ix_to_type,
       batch_size=1, embedding_size=FLAGS.embedding_size,
       hidden_size=FLAGS.hidden_size, rnn_layers=FLAGS.rnn_layers,
       bidirectional_encoder=FLAGS.bidirectional_encoder,
@@ -271,11 +274,13 @@ def decode():
       beam_size=FLAGS.beam_size, restore=True, model_name=FLAGS.model_name)
   
   with tf.Session(graph=graph) as sess:
-    print("Restoring model...")
+    print("Restoring model...", flush=True)
     m.start()
-    print("Restored model (global step {})".format(m.global_step.eval()))
+    print(
+      "Restored model (global step {})".format(m.global_step.eval()),
+      flush=True)
     with io.open(FLAGS.output_path, 'w', encoding='utf-8') as output_file:
-      for i, line in enumerate(lines):
+      for line in lines:
         ids = dataset.tokenize(line)
         while len(ids) < max_length:
           ids.append(dataset.type_to_ix['_PAD'])
@@ -284,8 +289,7 @@ def decode():
         # Sequences of text will only be repeated up to 5 times.
         top_line = re.sub(r'(.+?)\1{5,}', lambda m: m.group(1) * 5, top_line)
         output_file.write(top_line + '\n')
-        print("===", i, "===")
-        print(top_line)        
+        print(top_line, flush=True)        
 
 
 def main(_):

@@ -1,21 +1,22 @@
 """Sequence to Sequence model with an attention mechanism."""
 
+import os
+
 import tensorflow as tf
 from tensorflow.python.layers.core import Dense
 
-from ai.utils import get_available_gpus
 from ai.models import BaseModel
 
 
 class Seq2Seq(BaseModel):
   
   def __init__(self, num_types=0, max_encoder_length=99, max_decoder_length=99,
-               pad_id=0, eos_id=1, go_id=2,
+               pad_id=0, eos_id=1, go_id=2, space_id=3, ix_to_type=None,
                batch_size=32, embedding_size=32, hidden_size=256, rnn_layers=2,
                bidirectional_encoder=False, bidirectional_mode='add',
                use_lstm=False, attention=None, dropout=1., max_grad_norm=5.,
                epsilon=1e-8, beta1=.9, beta2=.999, beam_size=1,
-               gpu_config=None, **kw):
+               word_embeddings=None, word_embeddings_paths=None, **kw):
     """Build the entire computational graph.
     
     Keyword args:
@@ -25,6 +26,8 @@ class Seq2Seq(BaseModel):
     `pad_id`: the integer id that represents padding (defaults to 0),
     `eos_id`: the integer id that represents the end of the sequence,
     `go_id`: the integer id fed to the decoder as the first input,
+    `space_id`: the integer id of the space character,
+    `ix_to_type`: mandatory for word embedding lookup to function,
     `batch_size`: minibatch size,
     `embedding_size`: dimensionality of the embeddings,
     `hidden_size`: dimensionality of the hidden units for the RNNs,
@@ -46,8 +49,8 @@ class Seq2Seq(BaseModel):
     `beta1`: first order moment decay for AdamOptimizer (default .9),
     `beta2`: second order moment decay for AdamOptimizer (default .999),
     `beam_size`: width of beam search (1=greedy, max=Viterbi),
-    `gpu_config`: 'multi_workers' or 'multi_gpu' (none by default). Note
-                  that 'multi_gpu' is meant to be used if there are >=2 GPUs.
+    `word_embeddings`: a string with the FastText model's path,
+    `word_embeddings_paths`: a list of file paths to query word embeddings.
     """
     self.num_types = num_types
     self.max_encoder_length = max_encoder_length
@@ -55,6 +58,7 @@ class Seq2Seq(BaseModel):
     self.pad_id = pad_id
     self.eos_id = eos_id
     self.go_id = go_id
+    self.ix_to_type = ix_to_type
     self.batch_size = batch_size
     self.embedding_size = embedding_size
     self.hidden_size = hidden_size
@@ -69,11 +73,8 @@ class Seq2Seq(BaseModel):
     self.beta1 = beta1
     self.beta2 = beta2
     self.beam_size = beam_size
-    # Make sure there are GPUs available if we are to do device placement
-    self.num_gpus = len(get_available_gpus())
-    self.gpu_config = None
-    if self.num_gpus:
-      self.gpu_config = gpu_config
+    self.word_embeddings = word_embeddings
+    self.word_embeddings_paths = word_embeddings_paths
     # Use graph variables for learning rates to allow them to be modified/saved
     self.lr = tf.Variable(
       1e-3, trainable=False, dtype=tf.float32, name='learning_rate')
@@ -107,6 +108,12 @@ class Seq2Seq(BaseModel):
       self.embedding_kernel = tf.get_variable(
         'kernel', [self.num_types, self.embedding_size],
         initializer=tf.random_uniform_initializer(minval=-sq3, maxval=sq3))
+      if self.word_embeddings:
+        self.ix_to_type = tf.convert_to_tensor(self.ix_to_type)
+        self.word_embeddings_dict, self.word_embedding_size = self.get_wv()
+        self.space_embedding = tf.get_variable(
+          'space_embedding', [self.word_embedding_size],
+          initializer=tf.random_uniform_initializer(minval=-sq3, maxval=sq3))
     
     with tf.variable_scope('encoder'):
       encoder_output = self.build_encoder(self.get_embeddings(self.inputs))
@@ -140,15 +147,87 @@ class Seq2Seq(BaseModel):
       self.train_step = optimizer.apply_gradients(
         zip(grads, tvars), global_step=self.global_step)
   
+  def get_wv(self):
+    """Get all the word vectors reading from given files and a FastText model.
+    
+    Note this consumes lots of RAM. Also, it initializes OOV word vectors!
+    """
+    result = {}
+    size = None
+    for path in self.word_embeddings_paths:
+      # We get the unique words before getting their vectors to avoid extreme
+      # memory usage by having to hold all the repeated vectors.
+      vectors_str = os.system(
+        "grep -oE '\w+' " + path + "| sort -uf"
+        "| ../fastText/fasttext print-word-vectors " + self.word_embeddings)
+      for line in vectors_str.split('\n'):
+        line = line.split()  # first element is word, all others are floats
+        if line[0] not in result:
+          result[line[0]] = list(map(float, line[1:]))
+          if not size:
+            size = len(line) - 1
+    
+    return (
+      tf.contrib.lookup.HashTable(
+        tf.contrib.lookup.KeyValueTensorInitializer(result, -1)),
+      size)
+  
   def get_embeddings(self, ids):
     """Perform embedding lookup. Useful as a method for decoder helpers.
     
     Note this method requires the `embedding_kernel` attribute to be
     declared before being called.
     """
-    return tf.nn.embedding_lookup(self.embedding_kernel, ids)
+    char_embeds = tf.nn.embedding_lookup(self.embedding_kernel, ids)
+    if not self.word_embeddings:
+      return char_embeds
+    
+    # Append to each char embedding the embedding of the word it belongs to.
+    word_embeds = []
+    for seq in tf.unstack(char_embeds):
+      step = tf.constant(0)
+      partition_id = tf.constant(1)
+      partition_loc = tf.constant(0)
+      new_seq = tf.zeros([
+        self.max_encoder_length,
+        self.word_embedding_size + self.embedding_size])
+      
+      # Graph while loop body
+      def body(i, p, l, s):
+        noop = lambda: None
+        
+        def update():
+          word = tf.gather(self.ix_to_type, seq[l:i])
+          # For `scatter_update` we want [vec, ..., vec, space_vec]`
+          # ...but we don't want space_vec if the last item in the sequence
+          # is part of the word-- incrementing i does the trick.
+          tf.cond(
+            tf.equal(i, self.max_encoder_length - 1), lambda: i += 1, noop)
+          word_vec = tf.tile(
+            tf.expand_dims(self.word_embeddings_dict.lookup(word), 0),
+            [i - l, 1])
+          # Add a space embedding if we saw a space
+          space_vec = tf.expand_dims(self.space_embedding, 0)
+          tf.scatter_update(new_seq, tf.concat([word_vec, space_vec], 0))
+          l = i + 1
+        
+        condition = tf.logical_or(
+          tf.equal(i, self.max_encoder_length - 1), tf.logical_or(
+          tf.equal(seq[i], self.space_id), tf.logical_or(
+          tf.equal(seq[i], self.pad_id), tf.equal(seq[i], self.eos_id))))
+        
+        tf.cond(condition, update, noop)
+        i += 1
+      
+      tf.while_loop(
+        lambda i, p, loc: tf.less(i, self.max_encoder_length), body,
+        loop_vars=[step, partition_id, partition_loc])
+      
+      word_embeds.append(new_seq)
+    
+    return tf.stack(word_embeds)
   
-  def rnn_cell(self, num_units=None, attention_mechanism=None, gpu=None):
+  def rnn_cell(self, num_units=None, attention_mechanism=None):
     """Get a new RNN cell with wrappers according to the initial config."""
     cell = None
     
@@ -171,9 +250,6 @@ class Seq2Seq(BaseModel):
       cell = tf.contrib.rnn.DropoutWrapper(
         cell, input_keep_prob=self.dropout, output_keep_prob=self.dropout)
     
-    if gpu:
-      cell = tf.contrib.rnn.DeviceWrapper(cell, gpu)
-    
     return cell
   
   def build_encoder(self, encoder_input):
@@ -181,22 +257,9 @@ class Seq2Seq(BaseModel):
     # We make only the first encoder layer bidirectional to capture the context
     # (Wu et al., https://arxiv.org/pdf/1609.08144.pdf)
     if self.bidirectional_encoder:
-      
-      # Initialize all RNN cells and put them in their respective devices
-      fw_cell_gpu = None
-      bw_cell_gpu = None
-      if self.gpu_config == 'multi_gpu':
-        fw_cell_gpu = '/gpu:0'
-        bw_cell_gpu = '/gpu:1'
-      # elif self.gpu_config == 'multi_worker':
-      #   fw_cell_gpu = '/gpu:{}'.format(i)
-      #   fw_cell_gpu = '/gpu:{}'.format(i)
-      fw_cell = self.rnn_cell(gpu=fw_cell_gpu)
-      bw_cell = self.rnn_cell(gpu=bw_cell_gpu)
-      
       (encoder_fw_out, encoder_bw_out), _ = tf.nn.bidirectional_dynamic_rnn(
-        fw_cell, bw_cell, encoder_input, dtype=tf.float32,
-        sequence_length=self.input_lengths, swap_memory=bool(self.num_gpus))
+        self.rnn_cell(), self.rnn_cell(), encoder_input, dtype=tf.float32,
+        sequence_length=self.input_lengths)
       
       # Postprocess the bidirectional output according to the initial config
       if self.bidirectional_mode == 'add':
@@ -207,31 +270,16 @@ class Seq2Seq(BaseModel):
           encoder_output = tf.layers.dense(
             encoder_output, self.hidden_size, name='bidirectional_projection')
     else:
-      
-      first_cell_gpu = None
-      if self.gpu_config == 'multi_gpu':
-        first_cell_gpu = '/gpu:0'
-      # elif self.gpu_config == 'multi_worker':
-      #   first_cell_gpu = '/gpu:{}'.format(i)
       encoder_output, _ = tf.nn.dynamic_rnn(
-        self.rnn_cell(gpu=first_cell_gpu), encoder_input, dtype=tf.float32,
-        sequence_length=self.input_lengths, swap_memory=bool(self.num_gpus))
+        self.rnn_cell(), encoder_input, dtype=tf.float32,
+        sequence_length=self.input_lengths)
     
     # Only for deep RNN architectures
     if self.rnn_layers > 1:
-      
-      if self.gpu_config == 'multi_gpu':
-        cells = [self.rnn_cell(gpu='/gpu:{}'.format(j % self.num_gpus))
-                 for j in range(1, self.rnn_layers)]
-      # elif self.gpu_config == 'multi_worker':
-      #   cells = [self.rnn_cell(gpu='/gpu:{}'.format(i))
-      #            for _ in range(1, self.rnn_layers)]
-      else:
-        cells = [self.rnn_cell() for _ in range(1, self.rnn_layers)]
-      
+      cells = [self.rnn_cell() for _ in range(1, self.rnn_layers)]
       encoder_output, _ = tf.nn.dynamic_rnn(
         tf.contrib.rnn.MultiRNNCell(cells), encoder_output, dtype=tf.float32,
-        sequence_length=self.input_lengths, swap_memory=bool(self.num_gpus))
+        sequence_length=self.input_lengths)
     
     # We only use beam size > 1 during decoding
     if self.beam_size > 1:
@@ -258,14 +306,7 @@ class Seq2Seq(BaseModel):
         self.hidden_size, encoder_output,
         memory_sequence_length=final_encoder_lengths)
     
-    # Because attention is last, don't necessarily use the first GPU for this
-    decoder_gpu = None
-    if self.gpu_config == 'multi_gpu':
-      decoder_gpu = '/gpu:{}'.format(self.rnn_layers % self.num_gpus)
-    # elif self.gpu_config == 'multi_worker':
-    #   decoder_gpu = '/gpu:{}'.format(i)
-    decoder_cell = self.rnn_cell(
-      attention_mechanism=attention_mechanism, gpu=decoder_gpu)
+    decoder_cell = self.rnn_cell(attention_mechanism=attention_mechanism)
     
     # Use the first output of the encoder to learn an initial decoder state
     initial_state_pass = tf.split(tf.layers.dense(
@@ -285,16 +326,7 @@ class Seq2Seq(BaseModel):
     # For deep RNNs, stack the cells and use an initial state that merges the
     # initial state (maybe with attention) with the rest of the learned states
     if self.rnn_layers > 1:
-      
-      if self.gpu_config == 'multi_gpu':
-        cells = [self.rnn_cell(gpu='/gpu:{}'.format(j % self.num_gpus))
-                 for j in range(self.rnn_layers - 1)]
-      # elif self.gpu_config == 'multi_worker':
-      #   cells = [self.rnn_cell(gpu='/gpu:{}'.format(i))
-      #            for _ in range(self.rnn_layers - 1)]
-      else:
-        cells = [self.rnn_cell() for _ in range(self.rnn_layers - 1)]
-      
+      cells = [self.rnn_cell() for _ in range(1, self.rnn_layers)]
       decoder_cell = tf.contrib.rnn.MultiRNNCell(cells + [decoder_cell])
       initial_state = tuple(list(initial_state_pass[:-1]) + [initial_state])
     
@@ -306,8 +338,7 @@ class Seq2Seq(BaseModel):
       tf.tile([self.go_id], [self.batch_size]), self.eos_id, initial_state,
       self.beam_size, output_layer=dense)
     generative_output = tf.contrib.seq2seq.dynamic_decode(
-      generative_decoder, maximum_iterations=self.max_decoder_length,
-      swap_memory=bool(self.num_gpus))
+      generative_decoder, maximum_iterations=self.max_decoder_length)
     
     # Training decoder with optional scheduled sampling. If sampling occurs,
     # the output will be fed through the final prediction layer and then fed
@@ -321,8 +352,7 @@ class Seq2Seq(BaseModel):
         self.get_embeddings, self.p_sample)
       decoder = tf.contrib.seq2seq.BasicDecoder(
         decoder_cell, sampling_helper, initial_state, output_layer=dense)
-      decoder_output = tf.contrib.seq2seq.dynamic_decode(
-        decoder, swap_memory=bool(self.num_gpus))
+      decoder_output = tf.contrib.seq2seq.dynamic_decode(decoder)
       logits = decoder_output[0].rnn_output
     else:
       # To successfully build the graph just fill the logits with garbage 
