@@ -109,7 +109,13 @@ class Seq2Seq(BaseModel):
         'kernel', [self.num_types, self.embedding_size],
         initializer=tf.random_uniform_initializer(minval=-sq3, maxval=sq3))
       if self.word_embeddings:
-        self.ix_to_type = tf.convert_to_tensor(self.ix_to_type)
+        # TODO: generalize to n-grams rather than eliminating tuples.
+        ix_to_type = []
+        for t in self.ix_to_type:
+          if type(t) == tuple:
+            t = t[0]
+          ix_to_type.append(t)
+        self.ix_to_type = tf.convert_to_tensor(ix_to_type)
         self.word_embeddings_dict, self.word_embedding_size = self.get_wv()
         self.space_embedding = tf.get_variable(
           'space_embedding', [self.word_embedding_size],
@@ -202,7 +208,8 @@ class Seq2Seq(BaseModel):
           # ...but we don't want space_vec if the last item in the sequence
           # is part of the word-- incrementing i does the trick.
           tf.cond(
-            tf.equal(i, self.max_encoder_length - 1), lambda: i += 1, noop)
+            tf.equal(i, self.max_encoder_length - 1),
+            lambda: tf.assign(i, i + 1), noop)
           word_vec = tf.tile(
             tf.expand_dims(self.word_embeddings_dict.lookup(word), 0),
             [i - l, 1])
