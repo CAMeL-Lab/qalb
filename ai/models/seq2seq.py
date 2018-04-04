@@ -180,7 +180,9 @@ class Seq2Seq(BaseModel):
     
     return (
       tf.contrib.lookup.HashTable(
-        tf.contrib.lookup.KeyValueTensorInitializer(result, -1)),
+        tf.contrib.lookup.KeyValueTensorInitializer(
+          list(result.keys()), list(result.values()),
+          key_type=tf.string, value_dtype=tf.float32)),
       size)
   
   def get_embeddings(self, ids):
