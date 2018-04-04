@@ -173,16 +173,26 @@ class Seq2Seq(BaseModel):
       
       for line in vectors_str.split('\n'):
         line = line.split()  # first element is word, all others are floats
+        if len(line) == 0:
+          continue
         if line[0] not in result:
           result[line[0]] = list(map(float, line[1:]))
           if not size:
             size = len(line) - 1
+          try:
+            assert size == len(line) - 1
+          except AssertionError:
+            print(line)
+            print(size)
+            raise
     
+    keys, values = list(zip(*result.items()))
+    keys = list(map(lambda x: [x], keys))
     return (
       tf.contrib.lookup.HashTable(
         tf.contrib.lookup.KeyValueTensorInitializer(
-          list(result.keys()), list(result.values()),
-          key_type=tf.string, value_dtype=tf.float32)),
+          keys, values, key_dtype=tf.string, value_dtype=tf.float32),
+        -1),
       size)
   
   def get_embeddings(self, ids):
