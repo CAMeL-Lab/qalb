@@ -169,7 +169,7 @@ class Seq2Seq(BaseModel):
         ['sort', '-uf'], stdin=grep.stdout, stdout=subprocess.PIPE)
       vectors_str = subprocess.check_output(
         ['../fastText/fasttext', 'print-word-vectors', self.word_embeddings],
-        stdin=sort.stdout, stdout=subprocess.PIPE).decode('utf-8')
+        stdin=sort.stdout).decode('utf-8')
       
       for line in vectors_str.split('\n'):
         line = line.split()  # first element is word, all others are floats
