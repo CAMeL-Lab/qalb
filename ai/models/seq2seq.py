@@ -1,6 +1,6 @@
 """Sequence to Sequence model with an attention mechanism."""
 
-import os
+import subprocess
 
 import tensorflow as tf
 from tensorflow.python.layers.core import Dense
@@ -163,9 +163,14 @@ class Seq2Seq(BaseModel):
     for path in self.word_embeddings_paths:
       # We get the unique words before getting their vectors to avoid extreme
       # memory usage by having to hold all the repeated vectors.
-      vectors_str = os.system(
-        "grep -oE '\w+' " + path + "| sort -uf"
-        "| ../fastText/fasttext print-word-vectors " + self.word_embeddings)
+      grep = subprocess.Popen(
+        ['grep', '-oE', r'\w+', path], stdout=subprocess.PIPE)
+      sort = subprocess.Popen(
+        ['sort', '-uf'], stdin=grep.stdout, stdout=subprocess.PIPE)
+      vectors_str = subprocess.check_output(
+        ['../fastText/fasttext', 'print-word-vectors', self.word_embeddings],
+        stdin=sort.stdout, stdout=subprocess.PIPE).decode('utf-8')
+      
       for line in vectors_str.split('\n'):
         line = line.split()  # first element is word, all others are floats
         if line[0] not in result:
