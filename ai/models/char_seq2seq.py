@@ -1,4 +1,4 @@
-"""Sequence to Sequence model with an attention mechanism."""
+"""Character level seq2seq model that supports adding word embeddings."""
 
 import tensorflow as tf
 from tensorflow.python.layers.core import Dense
@@ -6,14 +6,15 @@ from tensorflow.python.layers.core import Dense
 from ai.models import BaseModel
 
 
-class Seq2Seq(BaseModel):
+class CharSeq2Seq(BaseModel):
   
   def __init__(self, num_types=0, max_encoder_length=99, max_decoder_length=99,
-               pad_id=0, eos_id=1, go_id=2, space_id=3, ix_to_type=None,
+               pad_id=0, eos_id=1, go_id=2, space_id=3,
                batch_size=32, embedding_size=32, hidden_size=256, rnn_layers=2,
                bidirectional_encoder=False, bidirectional_mode='add',
                use_lstm=False, attention=None, dropout=1., max_grad_norm=5.,
-               epsilon=1e-8, beta1=.9, beta2=.999, beam_size=1, **kw):
+               epsilon=1e-8, beta1=.9, beta2=.999, beam_size=1,
+               word_embeddings=None, train_word_embeddings=False, **kw):
     """Build the entire computational graph.
     
     Keyword args:
@@ -24,7 +25,6 @@ class Seq2Seq(BaseModel):
     `eos_id`: the integer id that represents the end of the sequence,
     `go_id`: the integer id fed to the decoder as the first input,
     `space_id`: the integer id of the space character,
-    `ix_to_type`: mandatory for word embedding lookup to function,
     `batch_size`: minibatch size,
     `embedding_size`: dimensionality of the embeddings,
     `hidden_size`: dimensionality of the hidden units for the RNNs,
@@ -45,7 +45,9 @@ class Seq2Seq(BaseModel):
     `epsilon`: small numerical constant for AdamOptimizer (default 1e-8),
     `beta1`: first order moment decay for AdamOptimizer (default .9),
     `beta2`: second order moment decay for AdamOptimizer (default .999),
-    `beam_size`: width of beam search (1=greedy, max=Viterbi).
+    `beam_size`: width of beam search (1=greedy, max=Viterbi),
+    `word_embeddings`: a numpy matrix with the word embeddings,
+    `train_word_embeddings`: whether to backpropagate on the word embeddings.
     """
     self.num_types = num_types
     self.max_encoder_length = max_encoder_length
@@ -68,21 +70,31 @@ class Seq2Seq(BaseModel):
     self.beta1 = beta1
     self.beta2 = beta2
     self.beam_size = beam_size
-    # Allow saving/restoring for learning rate by putting it in the graph.
-    self.lr = tf.Variable(
-      1e-3, trainable=False, dtype=tf.float32, name='learning_rate')
-    # Sampling probability variable that can be manually changed. See scheduled
-    # sampling paper (Bengio et al., https://arxiv.org/abs/1506.03099)
-    self.p_sample = tf.Variable(
-      0., trainable=False, dtype=tf.float32, name='sampling_probability')
+    
+    # This is here instead of in `build_graph` to avoid copying unnecessarily
+    # the big embedding matrix, as well as to initialize less attributes.
+    with tf.variable_scope('embeddings'):
+      self.word_embeddings = tf.Variable(
+        word_embeddings, trainable=train_word_embeddings, dtype=tf.float32,
+        name='word_embeddings')
+    
     super().__init__(**kw)
   
   def build_graph(self):
     
+    # Allow saving/restoring for learning rate by putting it in the graph.
+    self.lr = tf.Variable(
+      1e-3, trainable=False, dtype=tf.float32, name='learning_rate')
+    
+    # Sampling probability variable that can be manually changed. See scheduled
+    # sampling paper (Bengio et al., https://arxiv.org/abs/1506.03099)
+    self.p_sample = tf.Variable(
+      0., trainable=False, dtype=tf.float32, name='sampling_probability')
+    
     # Placeholders
     self.inputs = tf.placeholder(
       tf.int32, name='inputs',
-      shape=[self.batch_size, self.max_encoder_length])
+      shape=[self.batch_size, self.max_encoder_length, 2])
     self.labels = tf.placeholder(
       tf.int32, name='labels',
       shape=[self.batch_size, self.max_decoder_length])
@@ -93,13 +105,13 @@ class Seq2Seq(BaseModel):
     # Sequence lengths - used throughout model
     with tf.name_scope('input_lengths'):
       self.input_lengths = tf.reduce_sum(
-        tf.sign(tf.abs(self.inputs - self.pad_id)), reduction_indices=1)
+        tf.sign(tf.abs(self.inputs[:, :, 0] - self.pad_id)), axis=1)
     
     # Embedding matrix
     with tf.variable_scope('embeddings'):
       sq3 = 3 ** .5  # Uniform(-sqrt3, sqrt3) has variance 1
-      self.embedding_kernel = tf.get_variable(
-        'kernel', [self.num_types, self.embedding_size],
+      self.char_embeddings = tf.get_variable(
+        'char_embeddings', [self.num_types, self.embedding_size],
         initializer=tf.random_uniform_initializer(minval=-sq3, maxval=sq3))
     
     with tf.variable_scope('encoder'):
@@ -137,10 +149,13 @@ class Seq2Seq(BaseModel):
   def get_embeddings(self, ids):
     """Perform embedding lookup. Useful as a method for decoder helpers.
     
-    Note this method requires the `embedding_kernel` attribute to be
+    Note this method requires the `char_embeddings` attribute to be
     declared before being called.
     """
-    return tf.nn.embedding_lookup(self.embedding_kernel, ids)
+    char_embeds = tf.nn.embedding_lookup(self.char_embeddings, ids[:, :, 0])
+    word_embeds = tf.nn.embedding_lookup(self.word_embeddings, ids[:, :, 1])
+    return tf.concat(char_embeds, word_embeds, -1)
+  
   
   def rnn_cell(self, num_units=None, attention_mechanism=None):
     """Get a new RNN cell with wrappers according to the initial config."""
