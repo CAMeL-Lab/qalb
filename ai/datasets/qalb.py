@@ -73,6 +73,9 @@ class QALB(BaseDataset):
       os.path.join(data_dir, self.file_root + '.train'))
     with io.open(train_input_path, encoding='utf-8') as train_file:
       self.train_pairs = self.make_pairs(train_file.readlines(), train_labels)
+    # Lock the addition of new characters into the data-- this way, we simulate
+    # a real testing environment with possible _UNK tokens.
+    self.max_types = self.num_types()
     # Prepare validation data
     valid_input_path = os.path.join(
       data_dir, self.file_root + '.dev.' + self.extension)
