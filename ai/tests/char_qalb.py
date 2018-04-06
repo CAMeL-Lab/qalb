@@ -8,6 +8,7 @@ import timeit
 import tensorflow as tf
 import editdistance
 from scipy import exp
+from scipy.random import randn
 from scipy.special import lambertw
 
 from ai.datasets import QALB
@@ -17,7 +18,7 @@ from ai.models import Seq2Seq
 # HYPERPARAMETERS
 tf.app.flags.DEFINE_float('lr', 5e-4, "Initial learning rate.")
 tf.app.flags.DEFINE_integer('batch_size', 128, "Batch size.")
-tf.app.flags.DEFINE_integer('embedding_size', 128, "Embedding dimensionality.")
+tf.app.flags.DEFINE_integer('embedding_size', 150, "Embedding dimensionality.")
 tf.app.flags.DEFINE_integer('hidden_size', 256, "Number of hidden units.")
 tf.app.flags.DEFINE_integer('rnn_layers', 2, "Number of RNN layers.")
 tf.app.flags.DEFINE_boolean('bidirectional_encoder', True, "Whether to use a"
@@ -27,7 +28,7 @@ tf.app.flags.DEFINE_string('bidirectional_mode', 'add', "Set to 'add',"
 tf.app.flags.DEFINE_boolean('use_lstm', False, "Set to False to use GRUs.")
 tf.app.flags.DEFINE_string('attention', 'luong', "'bahdanau' or 'luong'"
                            " (default is 'luong').")
-tf.app.flags.DEFINE_float('dropout', .6, "Keep probability for dropout on the"
+tf.app.flags.DEFINE_float('dropout', .9, "Keep probability for dropout on the"
                           "RNNs' non-recurrent connections.")
 tf.app.flags.DEFINE_float('max_grad_norm', 10., "Clip gradients to this norm.")
 tf.app.flags.DEFINE_integer('beam_size', 5, "Beam search size.")
@@ -43,6 +44,10 @@ tf.app.flags.DEFINE_integer('parse_repeated', 0, "Set to > 1 to compress"
 tf.app.flags.DEFINE_float('epsilon', 1e-8, "Denominator constant.")
 tf.app.flags.DEFINE_float('beta1', .9, "First order moment decay.")
 tf.app.flags.DEFINE_float('beta2', .999, "Second order moment decay.")
+tf.app.flags.DEFINE_string('word_embeddings', None, "Will search for FastText"
+                           "model at `ai/datasets/data/gigaword/???.bin`.")
+tf.app.flags.DEFINE_boolean('train_word_embeddings', False, "Backprop on/off.")
+
 
 # CONFIG
 tf.app.flags.DEFINE_integer('max_sentence_length', 400, "Max. word length of"
@@ -61,10 +66,70 @@ tf.app.flags.DEFINE_string('model_name', None, "Name of the output directory.")
 
 FLAGS = tf.app.flags.FLAGS
 
+# Catch this very common error :)
+if not FLAGS.model_name:
+  raise ValueError(
+    "Undefined model name. Perhaps you forgot to set the --model_name flag?")
 
-def untokenize_batch(dataset, id_batch):
+
+# Read the training and dev data files.
+print("Building dynamic character-level QALB data...", flush=True)
+DATASET = QALB(
+  'QALB', parse_repeated=FLAGS.parse_repeated, extension=FLAGS.extension,
+  shuffle=FLAGS.decode is None, max_input_length=FLAGS.max_sentence_length,
+  max_label_length=FLAGS.max_sentence_length)
+
+
+# Get all unique word embeddings from the given FastText model.
+unix_command = r"cat {0} {1} | grep -oE '\w+' | sort -uf | " + \
+               r"../fastText/fasttext print-word-vectors {2}"
+unix_command = unix_command.format(
+  'ai/datasets/data/qalb/QALB.train' + FLAGS.extension,
+  'ai/datasets/data/qalb/QALB.dev' + FLAGS.extension,
+  'ai/datasets/data/gigaword/%s.bin' % FLAGS.word_embeddings)
+
+WORD_EMBEDDINGS = []
+WORD_TO_IX = {}
+for i, line in enumerate(os.popen(unix_command).read().splitlines()):
+  line = line.split()
+  word = tuple(DATASET.tokenize(line[0]))
+  WORD_TO_IX[word] = i
+  WORD_EMBEDDINGS.append(list(map(float, line[1:])))
+
+# Space embedding is set randomly with standard normal initialization.
+WORD_TO_IX[DATASET.type_to_ix[(' ',)]] = len(WORD_EMBEDDINGS)
+WORD_EMBEDDINGS.append(randn(len(WORD_EMBEDDINGS[0])))
+
+
+def add_word_ids(batch):
+  """Turn each character id to a pair (id, word_id)."""
+  space_like = [
+    DATASET.type_to_ix[(' ',)],
+    DATASET.type_to_ix['_PAD'], DATASET.type_to_ix['_EOS']]
+  new_batch = []
+  for seq in batch:
+    new_seq = []
+    # This accumulates ids until we are ready to form the word
+    char_ids = []
+    for i, id_ in enumerate(seq):
+      if id_ in space_like or i == len(seq) - 1:
+        # Add the accumulated pairs
+        word_id = WORD_TO_IX[tuple(char_ids)]
+        for char_id in char_ids:
+          new_seq.append([char_id, word_id])
+        # Add the space id if necessary and empty the char ids.
+        if i != len(seq) - 1:
+          new_seq.append(WORD_TO_IX[DATASET.type_to_ix[(' ',)]])
+        char_ids = []
+      else:
+        char_ids.append(id_)
+    new_batch.append(new_seq)
+  return new_batch
+
+
+def untokenize_batch(id_batch):
   """Return the UTF-8 sequences of the given batch of ids."""
-  return [dataset.untokenize(dataset.clean(s)) for s in id_batch]
+  return [DATASET.untokenize(DATASET.clean(s)) for s in id_batch]
 
 
 def levenshtein(proposed, gold, normalize=False):
@@ -80,12 +145,6 @@ def levenshtein(proposed, gold, normalize=False):
 
 def train():
   """Run a loop that continuously trains the model."""
-  print("Building dynamic character-level QALB data...", flush=True)
-  dataset = QALB(
-    'QALB', parse_repeated=FLAGS.parse_repeated, extension=FLAGS.extension,
-    shuffle=True, max_input_length=FLAGS.max_sentence_length,
-    max_label_length=FLAGS.max_sentence_length)
-  
   print("Building computational graph...", flush=True)
   graph = tf.Graph()
   
@@ -94,14 +153,14 @@ def train():
     # During training we use beam width 1. There are lots of complications on
     # the implementation, e.g. only tiling during inference.
     m = Seq2Seq(
-      num_types=dataset.num_types(),
+      num_types=DATASET.num_types(),
       max_encoder_length=FLAGS.max_sentence_length,
       max_decoder_length=FLAGS.max_sentence_length,
-      pad_id=dataset.type_to_ix['_PAD'],
-      eos_id=dataset.type_to_ix['_EOS'],
-      go_id=dataset.type_to_ix['_GO'],
-      space_id=dataset.type_to_ix[(' ',)],
-      ix_to_type=dataset.ix_to_type,
+      pad_id=DATASET.type_to_ix['_PAD'],
+      eos_id=DATASET.type_to_ix['_EOS'],
+      go_id=DATASET.type_to_ix['_GO'],
+      space_id=DATASET.type_to_ix[(' ',)],
+      ix_to_type=DATASET.ix_to_type,
       batch_size=FLAGS.batch_size, embedding_size=FLAGS.embedding_size,
       hidden_size=FLAGS.hidden_size, rnn_layers=FLAGS.rnn_layers,
       bidirectional_encoder=FLAGS.bidirectional_encoder,
@@ -109,7 +168,9 @@ def train():
       use_lstm=FLAGS.use_lstm, attention=FLAGS.attention, 
       dropout=FLAGS.dropout, max_grad_norm=FLAGS.max_grad_norm, beam_size=1,
       epsilon=FLAGS.epsilon, beta1=FLAGS.beta1, beta2=FLAGS.beta2,
-      restore=FLAGS.restore, model_name=FLAGS.model_name)
+      word_embeddings=WORD_EMBEDDINGS,
+      train_word_embeddings=FLAGS.train_word_embeddings, restore=FLAGS.restore,
+      model_name=FLAGS.model_name)
   
   # Allow TensorFlow to resort back to CPU when we try to set an operation to
   # a GPU where there's only a CPU implementation, rather than crashing.
@@ -127,7 +188,7 @@ def train():
     
     # Get the number of epochs that have passed (easier by getting batches now)
     step = m.global_step.eval()
-    batches = dataset.get_train_batches(m.batch_size)
+    batches = DATASET.get_train_batches(m.batch_size)
     epoch = step // len(batches)
     
     # Scheduled sampling decay
@@ -160,6 +221,7 @@ def train():
         
         # Gradient descent and backprop
         train_inputs, train_labels = zip(*batches[step % len(batches)])
+        train_inputs = add_word_ids(train_inputs)
         train_fd = {m.inputs: train_inputs, m.labels: train_labels}
         
         # Wrap into function to measure running time
@@ -170,7 +232,8 @@ def train():
           step, timeit.timeit(train_step, number=1)), flush=True)
         
         if step % FLAGS.num_steps_per_eval == 0:
-          valid_inputs, valid_labels = dataset.get_valid_batch(m.batch_size)
+          valid_inputs, valid_labels = DATASET.get_valid_batch(m.batch_size)
+          valid_inputs = add_word_ids(valid_inputs)
           valid_fd = {m.inputs: valid_inputs, m.labels: valid_labels}
           
           # Run training and validation perplexity and samples
@@ -191,10 +254,10 @@ def train():
           ], feed_dict=valid_fd)
           
           # Convert data to UTF-8 strings for evaluation and display
-          valid_inputs = untokenize_batch(dataset, valid_inputs)
-          valid_labels = untokenize_batch(dataset, valid_labels)
-          valid_output = untokenize_batch(dataset, valid_output)
-          infer_output = untokenize_batch(dataset, infer_output)
+          valid_inputs = untokenize_batch(valid_inputs)
+          valid_labels = untokenize_batch(valid_labels)
+          valid_output = untokenize_batch(valid_output)
+          infer_output = untokenize_batch(infer_output)
           
           # Run evaluation metrics
           lev = levenshtein(infer_output, valid_labels)
@@ -231,7 +294,7 @@ def train():
       print("Saving model...")
       m.save()
       print("Model saved. Resuming training...", flush=True)
-      batches = dataset.get_train_batches(m.batch_size)
+      batches = DATASET.get_train_batches(m.batch_size)
       epoch += 1
 
 
@@ -241,30 +304,26 @@ def decode():
     lines = test_file.readlines()
     # Get the largest sentence length to set an upper bound to the decoder.
     max_length = max([len(line) for line in lines])
-    
-  print("Building dynamic character-level QALB data...", flush=True)
-  dataset = QALB(
-    'QALB', parse_repeated=FLAGS.parse_repeated, extension=FLAGS.extension,
-    max_input_length=max_length, max_label_length=max_length)
   
   print("Building computational graph...", flush=True)
   graph = tf.Graph()
   with graph.as_default():
     
     m = Seq2Seq(
-      num_types=dataset.num_types(),
+      num_types=DATASET.num_types(),
       max_encoder_length=max_length, max_decoder_length=max_length,
-      pad_id=dataset.type_to_ix['_PAD'],
-      eos_id=dataset.type_to_ix['_EOS'],
-      go_id=dataset.type_to_ix['_GO'],
-      space_id=dataset.type_to_ix[(' ',)],
-      ix_to_type=dataset.ix_to_type,
+      pad_id=DATASET.type_to_ix['_PAD'],
+      eos_id=DATASET.type_to_ix['_EOS'],
+      go_id=DATASET.type_to_ix['_GO'],
+      space_id=DATASET.type_to_ix[(' ',)],
+      ix_to_type=DATASET.ix_to_type,
       batch_size=1, embedding_size=FLAGS.embedding_size,
       hidden_size=FLAGS.hidden_size, rnn_layers=FLAGS.rnn_layers,
       bidirectional_encoder=FLAGS.bidirectional_encoder,
       bidirectional_mode=FLAGS.bidirectional_mode,
       use_lstm=FLAGS.use_lstm, attention=FLAGS.attention,
-      beam_size=FLAGS.beam_size, restore=True, model_name=FLAGS.model_name)
+      beam_size=FLAGS.beam_size, word_embeddings=WORD_EMBEDDINGS,
+      restore=True, model_name=FLAGS.model_name)
   
   with tf.Session(graph=graph) as sess:
     print("Restoring model...", flush=True)
@@ -274,28 +333,14 @@ def decode():
       flush=True)
     with io.open(FLAGS.output_path, 'w', encoding='utf-8') as output_file:
       for line in lines:
-        ids = dataset.tokenize(line)
+        ids = DATASET.tokenize(line)
         while len(ids) < max_length:
-          ids.append(dataset.type_to_ix['_PAD'])
+          ids.append(DATASET.type_to_ix['_PAD'])
+        ids = add_word_ids(ids)
         outputs = sess.run(m.generative_output, feed_dict={m.inputs: [ids]})
-        top_line = untokenize_batch(dataset, outputs)[0]
+        top_line = untokenize_batch(outputs)[0]
         # Sequences of text will only be repeated up to 5 times.
         top_line = re.sub(r'(.+?)\1{5,}', lambda m: m.group(1) * 5, top_line)
         output_file.write(top_line + '\n')
         print(top_line, flush=True)        
 
-
-def main(_):
-  """Callee of `tf.app.run` the method."""
-  if not FLAGS.model_name:
-    raise ValueError(
-      "Undefined model name. Perhaps you forgot to set the --model_name flag?")
-  
-  if FLAGS.decode:
-    decode()
-  else:
-    train()
-
-
-if __name__ == '__main__':
-  tf.app.run()
