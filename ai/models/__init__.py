@@ -10,3 +10,4 @@
 
 from ai.models.base_model import BaseModel
 from ai.models.seq2seq import Seq2Seq
+from ai.models.char_seq2seq import CharSeq2Seq

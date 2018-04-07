@@ -9,7 +9,7 @@ from ai.models import BaseModel
 class CharSeq2Seq(BaseModel):
   
   def __init__(self, num_types=0, max_encoder_length=99, max_decoder_length=99,
-               pad_id=0, eos_id=1, go_id=2, space_id=3,
+               pad_id=0, eos_id=1, go_id=2,
                batch_size=32, embedding_size=32, hidden_size=256, rnn_layers=2,
                bidirectional_encoder=False, bidirectional_mode='add',
                use_lstm=False, attention=None, dropout=1., max_grad_norm=5.,
@@ -24,7 +24,6 @@ class CharSeq2Seq(BaseModel):
     `pad_id`: the integer id that represents padding (defaults to 0),
     `eos_id`: the integer id that represents the end of the sequence,
     `go_id`: the integer id fed to the decoder as the first input,
-    `space_id`: the integer id of the space character,
     `batch_size`: minibatch size,
     `embedding_size`: dimensionality of the embeddings,
     `hidden_size`: dimensionality of the hidden units for the RNNs,
@@ -55,7 +54,6 @@ class CharSeq2Seq(BaseModel):
     self.pad_id = pad_id
     self.eos_id = eos_id
     self.go_id = go_id
-    self.ix_to_type = ix_to_type
     self.batch_size = batch_size
     self.embedding_size = embedding_size
     self.hidden_size = hidden_size

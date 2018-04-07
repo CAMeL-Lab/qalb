@@ -12,7 +12,7 @@ from scipy import exp
 from scipy.special import lambertw
 
 from ai.datasets import QALB
-from ai.models import Seq2Seq
+from ai.models import CharSeq2Seq
 
 
 # HYPERPARAMETERS
@@ -87,13 +87,14 @@ DATASET = QALB(
 unix_command = r"cat {0} {1} | grep -oE '\w+' | sort -uf | " + \
                r"../fastText/fasttext print-word-vectors {2}"
 unix_command = unix_command.format(
-  'ai/datasets/data/qalb/QALB.train' + FLAGS.extension,
-  'ai/datasets/data/qalb/QALB.dev' + FLAGS.extension,
+  'ai/datasets/data/qalb/QALB.train.' + FLAGS.extension,
+  'ai/datasets/data/qalb/QALB.dev.' + FLAGS.extension,
   'ai/datasets/data/gigaword/%s.bin' % FLAGS.word_embeddings)
 
 WORD_EMBEDDINGS = []
 WORD_TO_IX = {}
-for i, line in enumerate(os.popen(unix_command).read().splitlines()):
+vec_lines = os.popen(unix_command).read().splitlines()
+for i, line in enumerate(vec_lines):
   line = line.split()
   word = tuple(DATASET.tokenize(line[0]))
   WORD_TO_IX[word] = i
@@ -155,15 +156,13 @@ def train():
     
     # During training we use beam width 1. There are lots of complications on
     # the implementation, e.g. only tiling during inference.
-    m = Seq2Seq(
+    m = CharSeq2Seq(
       num_types=DATASET.num_types(),
       max_encoder_length=FLAGS.max_sentence_length,
       max_decoder_length=FLAGS.max_sentence_length,
       pad_id=DATASET.type_to_ix['_PAD'],
       eos_id=DATASET.type_to_ix['_EOS'],
       go_id=DATASET.type_to_ix['_GO'],
-      space_id=DATASET.type_to_ix[(' ',)],
-      ix_to_type=DATASET.ix_to_type,
       batch_size=FLAGS.batch_size, embedding_size=FLAGS.embedding_size,
       hidden_size=FLAGS.hidden_size, rnn_layers=FLAGS.rnn_layers,
       bidirectional_encoder=FLAGS.bidirectional_encoder,
@@ -312,14 +311,12 @@ def decode():
   graph = tf.Graph()
   with graph.as_default():
     
-    m = Seq2Seq(
+    m = CharSeq2Seq(
       num_types=DATASET.num_types(),
       max_encoder_length=max_length, max_decoder_length=max_length,
       pad_id=DATASET.type_to_ix['_PAD'],
       eos_id=DATASET.type_to_ix['_EOS'],
       go_id=DATASET.type_to_ix['_GO'],
-      space_id=DATASET.type_to_ix[(' ',)],
-      ix_to_type=DATASET.ix_to_type,
       batch_size=1, embedding_size=FLAGS.embedding_size,
       hidden_size=FLAGS.hidden_size, rnn_layers=FLAGS.rnn_layers,
       bidirectional_encoder=FLAGS.bidirectional_encoder,
@@ -346,4 +343,9 @@ def decode():
         top_line = re.sub(r'(.+?)\1{5,}', lambda m: m.group(1) * 5, top_line)
         output_file.write(top_line + '\n')
         print(top_line, flush=True)        
+
+if FLAGS.decode:
+  decode()
+else:
+  train()
 
