@@ -2,10 +2,10 @@
 
 import io
 import os
+import random
 import re
 import timeit
 
-import numpy as np
 import tensorflow as tf
 import editdistance
 from scipy import exp
@@ -102,7 +102,8 @@ for i, line in enumerate(vec_lines):
 
 # Space embedding is set randomly with standard normal initialization.
 WORD_TO_IX[DATASET.type_to_ix[(' ',)]] = len(WORD_EMBEDDINGS)
-WORD_EMBEDDINGS.append(np.random.randn(len(WORD_EMBEDDINGS[0])))
+WORD_EMBEDDINGS.append([
+  random.normalvariate(0, 1) for _ in range(len(WORD_EMBEDDINGS[0]))])
 
 
 def add_word_ids(batch):

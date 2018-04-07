@@ -145,16 +145,15 @@ class CharSeq2Seq(BaseModel):
         zip(grads, tvars), global_step=self.global_step)
   
   def get_embeddings(self, ids):
-    """Perform embedding lookup. Useful as a method for decoder helpers.
-    
-    Note this method requires the `char_embeddings` attribute to be
-    declared before being called.
-    """
+    """Get the concatenation of word and char embeddings of the given ids."""
     char_embeds = tf.nn.embedding_lookup(self.char_embeddings, ids[:, :, 0])
     word_embeds = tf.nn.embedding_lookup(self.word_embeddings, ids[:, :, 1])
-    return tf.concat(char_embeds, word_embeds, -1)
+    return tf.concat([char_embeds, word_embeds], -1)
   
-  
+  def get_char_embeddings(self, ids):
+    """Get only the character embeddings of the given ids.."""
+    return tf.nn.embedding_lookup(self.char_embeddings, ids)
+ 
   def rnn_cell(self, num_units=None, attention_mechanism=None):
     """Get a new RNN cell with wrappers according to the initial config."""
     cell = None
@@ -262,7 +261,7 @@ class CharSeq2Seq(BaseModel):
     
     # Beam search decoding during inference (greedy for training evals)
     generative_decoder = tf.contrib.seq2seq.BeamSearchDecoder(
-      decoder_cell, self.get_embeddings,
+      decoder_cell, self.get_char_embeddings,
       tf.tile([self.go_id], [self.batch_size]), self.eos_id, initial_state,
       self.beam_size, output_layer=dense)
     generative_output = tf.contrib.seq2seq.dynamic_decode(
@@ -273,11 +272,11 @@ class CharSeq2Seq(BaseModel):
     # back to the embedding layer for consistency.
     if self.beam_size == 1:
       tf.get_variable_scope().reuse_variables()
-      decoder_input = self.get_embeddings(tf.concat(
+      decoder_input = self.get_char_embeddings(tf.concat(
         [tf.tile([[self.go_id]], [self.batch_size, 1]), self.labels], 1))
       sampling_helper = tf.contrib.seq2seq.ScheduledEmbeddingTrainingHelper(
         decoder_input, tf.tile([self.max_decoder_length], [self.batch_size]),
-        self.get_embeddings, self.p_sample)
+        self.get_char_embeddings, self.p_sample)
       decoder = tf.contrib.seq2seq.BasicDecoder(
         decoder_cell, sampling_helper, initial_state, output_layer=dense)
       decoder_output = tf.contrib.seq2seq.dynamic_decode(decoder)
