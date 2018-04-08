@@ -130,8 +130,11 @@ class QALB(BaseDataset):
   
   # Override this to pad the batches
   def get_train_batches(self, batch_size):
-    return list(map(self.pad_batch, super().get_train_batches(batch_size)))
-  
+    res = np.array(
+      list(map(self.pad_batch, super().get_train_batches(batch_size))))
+    #print(np.array(res).shape)
+    return res
+
   def get_valid_batch(self, batch_size):
     """Draw random examples and pad them to the largest sequence drawn."""
     batch = []
@@ -157,7 +160,7 @@ class QALB(BaseDataset):
   def make_pairs(self, input_lines, label_lines):
     pairs = []
     for i in range(len(input_lines)):
-      input_line = self.shorten_repetitions(input_lines[i])
+      input_line = self.shorten_repetitions(input_lines[i][:-1])  # no newline
       label_line = self.shorten_repetitions(label_lines[i][:-1])  # no newline
       if len(input_line) <= self.max_input_length and \
          len(label_line) <= self.max_label_length - 1:  # eos token

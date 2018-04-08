@@ -6,9 +6,9 @@ import random
 import re
 import timeit
 
+import numpy as np
 import tensorflow as tf
 import editdistance
-from scipy import exp
 from scipy.special import lambertw
 
 from ai.datasets import QALB
@@ -84,8 +84,8 @@ DATASET = QALB(
 
 
 # Get all unique word embeddings from the given FastText model.
-unix_command = r"cat {0} {1} | grep -oE '\w+' | sort -uf | " + \
-               r"../fastText/fasttext print-word-vectors {2}"
+unix_command = r"cat {0} {1} | grep -Po '(?<=^|\s)[^\s]*(?=\s|$)' | awk " + \
+               r"'!seen[$0]++' | ../fastText/fasttext print-word-vectors {2}"
 unix_command = unix_command.format(
   'ai/datasets/data/qalb/QALB.train.' + FLAGS.extension,
   'ai/datasets/data/qalb/QALB.dev.' + FLAGS.extension,
@@ -108,8 +108,9 @@ WORD_EMBEDDINGS.append([
 
 def add_word_ids(batch):
   """Turn each character id to a pair (id, word_id)."""
+  space_chid = DATASET.type_to_ix[(' ',)]
   space_like = [
-    DATASET.type_to_ix[(' ',)],
+    space_chid,
     DATASET.type_to_ix['_PAD'], DATASET.type_to_ix['_EOS']]
   new_batch = []
   for seq in batch:
@@ -119,17 +120,18 @@ def add_word_ids(batch):
     for i, id_ in enumerate(seq):
       if id_ in space_like or i == len(seq) - 1:
         # Add the accumulated pairs
-        word_id = WORD_TO_IX[tuple(char_ids)]
-        for char_id in char_ids:
-          new_seq.append([char_id, word_id])
+        if len(char_ids):
+          word_id = WORD_TO_IX[tuple(char_ids)]
+          for char_id in char_ids:
+            new_seq.append([char_id, word_id])
         # Add the space id if necessary and empty the char ids.
-        if i != len(seq) - 1:
-          new_seq.append(WORD_TO_IX[DATASET.type_to_ix[(' ',)]])
+        if id_ in space_like:
+          new_seq.append([space_chid, WORD_TO_IX[space_chid]])
         char_ids = []
       else:
         char_ids.append(id_)
     new_batch.append(new_seq)
-  return new_batch
+  return np.array(new_batch)
 
 
 def untokenize_batch(id_batch):
@@ -217,14 +219,14 @@ def train():
             p = min(f, i + step * (f - i) / total_train_steps)
           # Inverse sigmoid decay
           else:
-            expk = float(exp(-step / k))
+            expk = float(np.exp(-step / k))
             p = min(f, i - delta_i + (f + delta_f) / (1 + k * expk))
           
           sess.run(tf.assign(m.p_sample, p))
         
         # Gradient descent and backprop
-        train_inputs, train_labels = zip(*batches[step % len(batches)])
-        train_inputs = add_word_ids(train_inputs)
+        train_inputs = add_word_ids(batches[step % len(batches), :, 0])
+        train_labels = batches[step % len(batches), :, 1]
         train_fd = {m.inputs: train_inputs, m.labels: train_labels}
         
         # Wrap into function to measure running time
