@@ -238,8 +238,10 @@ def train():
         
         if step % FLAGS.num_steps_per_eval == 0:
           valid_inputs, valid_labels = DATASET.get_valid_batch(m.batch_size)
-          valid_inputs = add_word_ids(valid_inputs)
-          valid_fd = {m.inputs: valid_inputs, m.labels: valid_labels}
+          valid_fd = {
+            m.inputs: add_word_ids(valid_inputs),
+            m.labels: valid_labels
+          }
           
           # Run training and validation perplexity and samples
           
