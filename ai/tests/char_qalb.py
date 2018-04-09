@@ -121,12 +121,17 @@ def add_word_ids(batch):
       if id_ in space_like or i == len(seq) - 1:
         # Add the accumulated pairs
         if len(char_ids):
-          word_id = WORD_TO_IX[tuple(char_ids)]
+          try:
+            word_id = WORD_TO_IX[tuple(char_ids)]
+          except KeyError:
+            print("Unknown word at index", i)
+            print(DATASET.untokenize(char_ids))
+            raise
           for char_id in char_ids:
             new_seq.append([char_id, word_id])
         # Add the space id if necessary and empty the char ids.
-        if id_ in space_like:
-          new_seq.append([space_chid, WORD_TO_IX[space_chid]])
+        #if id_ in space_like:
+        new_seq.append([space_chid, WORD_TO_IX[space_chid]])
         char_ids = []
       else:
         char_ids.append(id_)
@@ -231,8 +236,18 @@ def train():
         
         # Wrap into function to measure running time
         def train_step():
-          sess.run(m.train_step, feed_dict=train_fd)
-        
+          try:
+            sess.run(m.train_step, feed_dict=train_fd)
+          except:
+            print(batches[step % len(batches), :, 0].shape)
+            print(train_inputs.shape)
+            for seq in train_inputs: 
+              if len(seq) != FLAGS.max_sentence_length:
+                print("***BAD SEQ OF LENGTH", len(seq), "FOUND***")
+                print(seq)
+                print(DATASET.untokenize(batches[step % len(batches), :, 0]))
+            raise
+
         print("Global step {0} ({1}s)".format(
           step, timeit.timeit(train_step, number=1)), flush=True)
         
@@ -337,12 +352,17 @@ def decode():
       "Restored model (global step {})".format(m.global_step.eval()),
       flush=True)
     with io.open(FLAGS.output_path, 'w', encoding='utf-8') as output_file:
-      for line in lines:
+      for i, line in enumerate(lines):
+        line = line[:-1]  # remove newline
+        print("Line", i, "input:")
+        print(line)
+        print("UNIX input:")
+        print(os.popen("head -1 ai/datasets/data/qalb/QALB.dev.mada.kmle").read())
         ids = DATASET.tokenize(line)
         while len(ids) < max_length:
           ids.append(DATASET.type_to_ix['_PAD'])
-        ids = add_word_ids(ids)
-        outputs = sess.run(m.generative_output, feed_dict={m.inputs: [ids]})
+        ids = add_word_ids([ids])
+        outputs = sess.run(m.generative_output, feed_dict={m.inputs: ids})
         top_line = untokenize_batch(outputs)[0]
         # Sequences of text will only be repeated up to 5 times.
         top_line = re.sub(r'(.+?)\1{5,}', lambda m: m.group(1) * 5, top_line)
