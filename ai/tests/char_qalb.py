@@ -322,7 +322,7 @@ def train():
 
 def decode():
   """Run a blind test on the file with path given by the `decode` flag."""
-  with io.open(FLAGS.decode, encoding='utf-8') as test_file:
+  with open(FLAGS.decode) as test_file:
     lines = test_file.readlines()
     # Get the largest sentence length to set an upper bound to the decoder.
     max_length = max([len(line) for line in lines])
@@ -353,11 +353,10 @@ def decode():
       flush=True)
     with io.open(FLAGS.output_path, 'w', encoding='utf-8') as output_file:
       for i, line in enumerate(lines):
-        line = line[:-1]  # remove newline
+        if line.endswith('\n'):
+         line = line[:-1]
         print("Line", i, "input:")
         print(line)
-        print("UNIX input:")
-        print(os.popen("head -1 ai/datasets/data/qalb/QALB.dev.mada.kmle").read())
         ids = DATASET.tokenize(line)
         while len(ids) < max_length:
           ids.append(DATASET.type_to_ix['_PAD'])
@@ -367,7 +366,8 @@ def decode():
         # Sequences of text will only be repeated up to 5 times.
         top_line = re.sub(r'(.+?)\1{5,}', lambda m: m.group(1) * 5, top_line)
         output_file.write(top_line + '\n')
-        print(top_line, flush=True)        
+        print("Output:")
+        print(top_line, flush=True, end='\n\n')
 
 if FLAGS.decode:
   decode()
