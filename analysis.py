@@ -44,8 +44,8 @@ def parse_edits(line):
     edit_items[1] = int(edit_items[1])
     
     # Convert unicode-string-inside-string into actual unicode string
-    edit_items[2] = codecs.decode(edit_items[2][2:-1], 'unicode_escape')
-    edit_items[3] = codecs.decode(edit_items[3][2:-1], 'unicode_escape')
+    edit_items[2] = codecs.decode(edit_items[2][2:-1], 'unicode_escape') or 'NIL'
+    edit_items[3] = codecs.decode(edit_items[3][2:-1], 'unicode_escape') or 'NIL'
     
     edits.append(edit_items)
     
