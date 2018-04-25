@@ -56,7 +56,7 @@ tf.app.flags.DEFINE_integer('num_steps_per_eval', 50, "Number of steps to wait"
                             " before running the graph with the dev set.")
 tf.app.flags.DEFINE_integer('max_epochs', 30, "Number of epochs to run"
                             " (0 = no limit).")
-tf.app.flags.DEFINE_string('extension', 'mada.kmle', "Data files' extension.")
+tf.app.flags.DEFINE_string('extension', 'orig', "Data files' extension.")
 tf.app.flags.DEFINE_string('decode', None, "Set to a path to run on a file.")
 tf.app.flags.DEFINE_string('output_path', os.path.join('output', 'result.txt'),
                            "Name of the output file with decoding results.")
@@ -84,16 +84,19 @@ DATASET = QALB(
 
 
 # Get all unique word embeddings from the given FastText model.
-unix_command = r"cat {0} {1} | grep -Po '(?<=^|\s)[^\s]*(?=\s|$)' | awk " + \
-               r"'!seen[$0]++' | ../fastText/fasttext print-word-vectors {2}"
-unix_command = unix_command.format(
-  'ai/datasets/data/qalb/QALB.train.' + FLAGS.extension,
-  'ai/datasets/data/qalb/QALB.dev.' + FLAGS.extension,
-  'ai/datasets/data/gigaword/%s.bin' % FLAGS.word_embeddings)
+cat_files = ('ai/datasets/data/qalb/QALB.train.{0} '
+             'ai/datasets/data/qalb/QALB.dev.{0} '
+             'ai/datasets/data/qalb/QALB.test2014.{0} '
+             'ai/datasets/data/qalb/QALB.test2015.{0} '
+             'ai/datasets/data/qalb/QALB.l2.{0} '.format(FLAGS.extension))
+unix_comm = (r"cat {0}| grep -Po '(?<=^|\s)[^\s]*(?=\s|$)' | awk "
+             r"'!seen[$0]++' | ../fastText/fasttext print-word-vectors {1}")
+unix_comm = unix_comm.format(
+  cat_files, 'ai/datasets/data/gigaword/%s.bin' % FLAGS.word_embeddings)
 
 WORD_EMBEDDINGS = []
 WORD_TO_IX = {}
-vec_lines = os.popen(unix_command).read().splitlines()
+vec_lines = os.popen(unix_comm).read().splitlines()
 for i, line in enumerate(vec_lines):
   line = line.split()
   word = tuple(DATASET.tokenize(line[0]))
