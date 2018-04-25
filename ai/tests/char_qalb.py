@@ -87,21 +87,32 @@ DATASET = QALB(
 cat_files = ('ai/datasets/data/qalb/QALB.train.{0} '
              'ai/datasets/data/qalb/QALB.dev.{0} '
              'ai/datasets/data/qalb/QALB.test2014.{0} '
-             'ai/datasets/data/qalb/QALB.test2015.{0} '
-             'ai/datasets/data/qalb/QALB.l2.{0} '.format(FLAGS.extension))
-unix_comm = (r"cat {0}| grep -Po '(?<=^|\s)[^\s]*(?=\s|$)' | awk "
-             r"'!seen[$0]++' | ../fastText/fasttext print-word-vectors {1}")
-unix_comm = unix_comm.format(
-  cat_files, 'ai/datasets/data/gigaword/%s.bin' % FLAGS.word_embeddings)
+             'ai/datasets/data/qalb/QALB.test2015.{0}'.format(FLAGS.extension))
+
+unix_comm = (r"cat %s| grep -Po '(?<=^|\s)[^\s]*(?=\s|$)' | awk "
+             r"'!seen[$0]++' | ../fastText/fasttext print-word-vectors "
+             r"ai/datasets/data/gigaword/{}.bin") % cat_files
 
 WORD_EMBEDDINGS = []
 WORD_TO_IX = {}
-vec_lines = os.popen(unix_comm).read().splitlines()
-for i, line in enumerate(vec_lines):
-  line = line.split()
-  word = tuple(DATASET.tokenize(line[0]))
-  WORD_TO_IX[word] = i
-  WORD_EMBEDDINGS.append(list(map(float, line[1:])))
+
+if FLAGS.word_embeddings == 'concat':
+  narrow_lines = os.popen(unix_comm.format('narrow')).read().splitlines()
+  wide_lines = os.popen(unix_comm.format('wide')).read().splitlines()
+  # The words should be the exact same for both lists, in the exact same order.
+  for i in range(len(narrow_lines)):
+    narrow_line = narrow_lines[i].split()
+    word = tuple(DATASET.tokenize(narrow_line[0]))
+    WORD_TO_IX[word] = i
+    embedding = list(map(float, narrow_line[1:] + wide_lines[i].split()[1:]))
+    WORD_EMBEDDINGS.append(embedding)
+else:
+  vec_lines = os.popen(unix_comm.format(FLAGS.word_embeddings)).read()
+  for i, line in enumerate(vec_lines.splitlines()):
+    line = line.split()
+    word = tuple(DATASET.tokenize(line[0]))
+    WORD_TO_IX[word] = i
+    WORD_EMBEDDINGS.append(list(map(float, line[1:])))
 
 # Space embedding is set randomly with standard normal initialization.
 WORD_TO_IX[DATASET.type_to_ix[(' ',)]] = len(WORD_EMBEDDINGS)
